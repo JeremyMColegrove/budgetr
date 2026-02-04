@@ -76,21 +76,8 @@ export interface BudgetRule {
 // ----------------------------------------------------------------------------
 
 /**
- * A Transaction is an actual financial event that occurred.
- * It may be linked to a BudgetRule via ruleId.
- * NOT IMPLEMENTED YET - included for future-proofing.
+ * Transaction interface will be defined here in the future.
  */
-export interface Transaction {
-  id: string;
-  ruleId?: string; // Links back to the BudgetRule that spawned this
-  accountId: string;
-  label: string;
-  amount: number;
-  type: TransactionType;
-  category: string;
-  date: string; // ISO date string
-  notes: string;
-}
 
 
 // ----------------------------------------------------------------------------

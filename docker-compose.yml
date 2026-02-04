@@ -1,0 +1,51 @@
+# ============================================================================
+# Docker Compose Configuration for Budget Blueprint
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # Backend Server
+  # --------------------------------------------------------------------------
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: budget-server
+    ports:
+      - "3001:3001"
+    volumes:
+      # Persist SQLite database
+      - ./server/data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_PATH=/app/data/budget.db
+      - FRONTEND_URL=http://localhost:5173
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # --------------------------------------------------------------------------
+  # Frontend Application
+  # --------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:3001/api
+    container_name: budget-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    # Use host network mode on Linux for host.docker.internal to work
+    # On Mac/Windows, host.docker.internal works by default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

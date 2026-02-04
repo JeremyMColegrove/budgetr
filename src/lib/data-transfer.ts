@@ -5,7 +5,7 @@
 // Schema-versioned exports enable future migrations.
 // ============================================================================
 
-import { storage } from '@/lib/storage';
+import { useBudgetStore } from '@/store/budget-store';
 import type { BudgetProfile, BudgetRule } from '@/types/budget';
 
 // ----------------------------------------------------------------------------
@@ -47,6 +47,7 @@ export interface ImportResult {
     success: boolean;
     profilesImported: number;
     rulesImported: number;
+    accountsImported: number;
     profilesSkipped: number;
     errors: string[];
     warnings: string[];
@@ -157,10 +158,6 @@ function validateExportData(data: unknown): ValidationResult {
 // Implementation
 // ----------------------------------------------------------------------------
 
-function generateId(): string {
-    return crypto.randomUUID();
-}
-
 function renameProfile(name: string, existingNames: Set<string>): string {
     let newName = name;
     let counter = 1;
@@ -173,20 +170,19 @@ function renameProfile(name: string, existingNames: Set<string>): string {
 
 export const dataTransfer: DataTransferAdapter = {
     async exportAll(): Promise<ExportData> {
-        const profiles = await storage.get<BudgetProfile[]>('profiles') ?? [];
-        const activeProfileId = await storage.get<string>('activeProfileId');
-
+        const store = useBudgetStore.getState();
+        
         return {
             version: SCHEMA_VERSION,
             exportedAt: new Date().toISOString(),
-            profiles,
-            activeProfileId: activeProfileId ?? null,
+            profiles: store.profiles,
+            activeProfileId: store.activeProfileId,
         };
     },
 
     async exportProfile(profileId: string): Promise<ExportData> {
-        const profiles = await storage.get<BudgetProfile[]>('profiles') ?? [];
-        const profile = profiles.find(p => p.id === profileId);
+        const store = useBudgetStore.getState();
+        const profile = store.profiles.find(p => p.id === profileId);
 
         if (!profile) {
             throw new Error(`Profile not found: ${profileId}`);
@@ -209,79 +205,236 @@ export const dataTransfer: DataTransferAdapter = {
             success: false,
             profilesImported: 0,
             rulesImported: 0,
+            accountsImported: 0,
             profilesSkipped: 0,
             errors: [],
             warnings: [],
         };
 
         try {
+            const store = useBudgetStore.getState();
+
             if (options.mode === 'replace') {
-                // Replace all existing data
-                await storage.set('profiles', data.profiles);
-                if (data.activeProfileId && data.profiles.some(p => p.id === data.activeProfileId)) {
-                    await storage.set('activeProfileId', data.activeProfileId);
-                } else if (data.profiles.length > 0) {
-                    await storage.set('activeProfileId', data.profiles[0].id);
+                // Delete all existing profiles first
+                const existingProfiles = [...store.profiles];
+                for (const profile of existingProfiles) {
+                    try {
+                        await store.deleteProfile(profile.id);
+                    } catch (error) {
+                        // Ignore errors for last profile deletion
+                    }
                 }
 
-                result.profilesImported = data.profiles.length;
-                result.rulesImported = data.profiles.reduce((sum, p) => sum + p.rules.length, 0);
-            } else {
-                // Merge with existing data
-                const existingProfiles = await storage.get<BudgetProfile[]>('profiles') ?? [];
-                const existingNames = new Set(existingProfiles.map(p => p.name));
-                const existingIds = new Set(existingProfiles.map(p => p.id));
+                // Import all profiles
+                for (const importProfile of data.profiles) {
+                    try {
+                        // Create profile
+                        const newProfile = await store.createProfile(importProfile.name);
+                        
+                        // Create account ID mapping (old ID -> new ID)
+                        const accountIdMap = new Map<string, string>();
+                        
+                        // Import accounts and build mapping
+                        for (const account of importProfile.accounts) {
+                            const newAccount = await store.addAccount({
+                                name: account.name,
+                                type: account.type,
+                                startingBalance: account.startingBalance,
+                            });
+                            accountIdMap.set(account.id, newAccount.id);
+                            result.accountsImported++;
+                        }
 
-                const mergedProfiles = [...existingProfiles];
+                        // Import rules with mapped account IDs
+                        for (const rule of importProfile.rules) {
+                            await store.addRule({
+                                label: rule.label,
+                                amount: rule.amount,
+                                type: rule.type,
+                                accountId: rule.accountId ? accountIdMap.get(rule.accountId) : undefined,
+                                toAccountId: rule.toAccountId ? accountIdMap.get(rule.toAccountId) : undefined,
+                                category: rule.category,
+                                notes: rule.notes,
+                                isRecurring: rule.isRecurring,
+                                frequency: rule.frequency,
+                                startDate: rule.startDate,
+                            });
+                            result.rulesImported++;
+                        }
+
+                        result.profilesImported++;
+
+                        // Set as active if it was the active profile
+                        if (data.activeProfileId === importProfile.id) {
+                            store.setActiveProfile(newProfile.id);
+                        }
+                    } catch (error) {
+                        result.errors.push(`Failed to import profile "${importProfile.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    }
+                }
+
+                // If no active profile was set, use the first imported one
+                if (data.profiles.length > 0 && !data.activeProfileId) {
+                    const firstProfile = store.profiles[0];
+                    if (firstProfile) {
+                        store.setActiveProfile(firstProfile.id);
+                    }
+                }
+            } else {
+                // Merge mode
+                const existingNames = new Set(store.profiles.map(p => p.name));
 
                 for (const importProfile of data.profiles) {
                     const nameExists = existingNames.has(importProfile.name);
-                    const idExists = existingIds.has(importProfile.id);
 
-                    if (nameExists || idExists) {
+                    if (nameExists) {
                         switch (options.conflictResolution) {
                             case 'skip':
                                 result.profilesSkipped++;
                                 result.warnings.push(`Skipped profile: ${importProfile.name}`);
                                 break;
 
-                            case 'overwrite':
-                                const existingIndex = mergedProfiles.findIndex(p => p.id === importProfile.id || p.name === importProfile.name);
-                                if (existingIndex >= 0) {
-                                    mergedProfiles[existingIndex] = importProfile;
-                                    result.profilesImported++;
-                                    result.rulesImported += importProfile.rules.length;
+                            case 'overwrite': {
+                                const existing = store.profiles.find(p => p.name === importProfile.name);
+                                if (existing) {
+                                    try {
+                                        // Delete existing profile
+                                        await store.deleteProfile(existing.id);
+                                        
+                                        // Create new profile with imported data
+                                        void await store.createProfile(importProfile.name);
+                                        
+                                        // Create account ID mapping
+                                        const accountIdMap = new Map<string, string>();
+                                        
+                                        // Import accounts and build mapping
+                                        for (const account of importProfile.accounts) {
+                                            const newAccount = await store.addAccount({
+                                                name: account.name,
+                                                type: account.type,
+                                                startingBalance: account.startingBalance,
+                                            });
+                                            accountIdMap.set(account.id, newAccount.id);
+                                            result.accountsImported++;
+                                        }
+
+                                        // Import rules with mapped account IDs
+                                        for (const rule of importProfile.rules) {
+                                            await store.addRule({
+                                                label: rule.label,
+                                                amount: rule.amount,
+                                                type: rule.type,
+                                                accountId: rule.accountId ? accountIdMap.get(rule.accountId) : undefined,
+                                                toAccountId: rule.toAccountId ? accountIdMap.get(rule.toAccountId) : undefined,
+                                                category: rule.category,
+                                                notes: rule.notes,
+                                                isRecurring: rule.isRecurring,
+                                                frequency: rule.frequency,
+                                                startDate: rule.startDate,
+                                            });
+                                            result.rulesImported++;
+                                        }
+
+                                        result.profilesImported++;
+                                        result.warnings.push(`Overwrote profile: ${importProfile.name}`);
+                                    } catch (error) {
+                                        result.errors.push(`Failed to overwrite profile "${importProfile.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+                                    }
                                 }
                                 break;
+                            }
 
-                            case 'rename':
+                            case 'rename': {
                                 const newName = renameProfile(importProfile.name, existingNames);
-                                const newId = idExists ? generateId() : importProfile.id;
-                                mergedProfiles.push({
-                                    ...importProfile,
-                                    id: newId,
-                                    name: newName,
-                                });
-                                existingNames.add(newName);
-                                existingIds.add(newId);
-                                result.profilesImported++;
-                                result.rulesImported += importProfile.rules.length;
-                                result.warnings.push(`Renamed "${importProfile.name}" to "${newName}"`);
+                                try {
+                                    void await store.createProfile(newName);
+                                    
+                                    // Create account ID mapping
+                                    const accountIdMap = new Map<string, string>();
+                                    
+                                    // Import accounts and build mapping
+                                    for (const account of importProfile.accounts) {
+                                        const newAccount = await store.addAccount({
+                                            name: account.name,
+                                            type: account.type,
+                                            startingBalance: account.startingBalance,
+                                        });
+                                        accountIdMap.set(account.id, newAccount.id);
+                                        result.accountsImported++;
+                                    }
+
+                                    // Import rules with mapped account IDs
+                                    for (const rule of importProfile.rules) {
+                                        await store.addRule({
+                                            label: rule.label,
+                                            amount: rule.amount,
+                                            type: rule.type,
+                                            accountId: rule.accountId ? accountIdMap.get(rule.accountId) : undefined,
+                                            toAccountId: rule.toAccountId ? accountIdMap.get(rule.toAccountId) : undefined,
+                                            category: rule.category,
+                                            notes: rule.notes,
+                                            isRecurring: rule.isRecurring,
+                                            frequency: rule.frequency,
+                                            startDate: rule.startDate,
+                                        });
+                                        result.rulesImported++;
+                                    }
+
+                                    existingNames.add(newName);
+                                    result.profilesImported++;
+                                    result.warnings.push(`Renamed "${importProfile.name}" to "${newName}"`);
+                                } catch (error) {
+                                    result.errors.push(`Failed to import profile "${importProfile.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+                                }
                                 break;
+                            }
                         }
                     } else {
-                        mergedProfiles.push(importProfile);
-                        existingNames.add(importProfile.name);
-                        existingIds.add(importProfile.id);
-                        result.profilesImported++;
-                        result.rulesImported += importProfile.rules.length;
+                        // No conflict, just import
+                        try {
+                            void await store.createProfile(importProfile.name);
+                            
+                            // Create account ID mapping
+                            const accountIdMap = new Map<string, string>();
+                            
+                            // Import accounts and build mapping
+                            for (const account of importProfile.accounts) {
+                                const newAccount = await store.addAccount({
+                                    name: account.name,
+                                    type: account.type,
+                                    startingBalance: account.startingBalance,
+                                });
+                                accountIdMap.set(account.id, newAccount.id);
+                                result.accountsImported++;
+                            }
+
+                            // Import rules with mapped account IDs
+                            for (const rule of importProfile.rules) {
+                                await store.addRule({
+                                    label: rule.label,
+                                    amount: rule.amount,
+                                    type: rule.type,
+                                    accountId: rule.accountId ? accountIdMap.get(rule.accountId) : undefined,
+                                    toAccountId: rule.toAccountId ? accountIdMap.get(rule.toAccountId) : undefined,
+                                    category: rule.category,
+                                    notes: rule.notes,
+                                    isRecurring: rule.isRecurring,
+                                    frequency: rule.frequency,
+                                    startDate: rule.startDate,
+                                });
+                                result.rulesImported++;
+                            }
+
+                            existingNames.add(importProfile.name);
+                            result.profilesImported++;
+                        } catch (error) {
+                            result.errors.push(`Failed to import profile "${importProfile.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        }
                     }
                 }
-
-                await storage.set('profiles', mergedProfiles);
             }
 
-            result.success = true;
+            result.success = result.errors.length === 0;
         } catch (error) {
             result.errors.push(error instanceof Error ? error.message : 'Unknown error during import');
         }

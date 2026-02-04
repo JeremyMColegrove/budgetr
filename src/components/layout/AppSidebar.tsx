@@ -16,7 +16,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { Database, LayoutDashboard, Settings, Wallet } from 'lucide-react';
+import { LayoutDashboard, Settings, Wallet } from 'lucide-react';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -42,7 +42,6 @@ interface AppSidebarProps {
 const NAV_ITEMS: NavItem[] = [
     { id: 'budget', label: 'Budget', icon: LayoutDashboard },
     { id: 'accounts', label: 'Accounts', icon: Wallet },
-    { id: 'data', label: 'Data Management', icon: Database },
     { id: 'settings', label: 'Settings', icon: Settings },
 ];
 

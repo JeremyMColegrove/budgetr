@@ -1,17 +1,17 @@
 // ============================================================================
 // BUDGET STORE - Zustand State Management
 // ============================================================================
-// Manages Budget Profiles and Transaction Rules with localStorage persistence.
+// Manages Budget Profiles and Transaction Rules with API persistence.
 // ============================================================================
 
-import { storage } from '@/lib/storage';
+import { accountsApi, profilesApi, rulesApi } from '@/lib/api-client';
 import type {
-  Account,
-  AccountFormData,
-  BudgetProfile,
-  BudgetRule,
-  BudgetRuleFormData,
-  Frequency,
+    Account,
+    AccountFormData,
+    BudgetProfile,
+    BudgetRule,
+    BudgetRuleFormData,
+    Frequency,
 } from '@/types/budget';
 import { create } from 'zustand';
 
@@ -19,7 +19,6 @@ import { create } from 'zustand';
 // Constants
 // ----------------------------------------------------------------------------
 
-const STORAGE_KEY = 'profiles';
 const ACTIVE_PROFILE_KEY = 'active_profile_id';
 
 // Monthly multipliers for frequency normalization
@@ -34,34 +33,12 @@ const FREQUENCY_TO_MONTHLY: Record<Frequency, number> = {
 // Helper Functions
 // ----------------------------------------------------------------------------
 
-/** Generate a unique ID */
-function generateId(): string {
-  return crypto.randomUUID();
-}
-
-/** Get current ISO timestamp */
-function now(): string {
-  return new Date().toISOString();
-}
-
 /** Calculate monthly normalized amount for a rule */
 export function getMonthlyNormalizedAmount(rule: BudgetRule): number {
   if (!rule.isRecurring || !rule.frequency) {
     return rule.amount; // Non-recurring = one-time, treat as monthly
   }
   return rule.amount * FREQUENCY_TO_MONTHLY[rule.frequency];
-}
-
-/** Create a default profile */
-function createDefaultProfile(): BudgetProfile {
-  return {
-    id: generateId(),
-    name: 'My Budget',
-    accounts: [],
-    rules: [],
-    createdAt: now(),
-    updatedAt: now(),
-  };
 }
 
 // ----------------------------------------------------------------------------
@@ -127,38 +104,37 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     set({ isLoading: true });
 
     try {
-      // Load profiles from storage
-      let profiles = await storage.get<BudgetProfile[]>(STORAGE_KEY);
-      let activeProfileId = await storage.get<string>(ACTIVE_PROFILE_KEY);
+      // Load profiles from API
+      const profiles = await profilesApi.list();
 
       // Create default profile if none exist
-      if (!profiles || profiles.length === 0) {
-        const defaultProfile = createDefaultProfile();
-        profiles = [defaultProfile];
-        activeProfileId = defaultProfile.id;
-        await storage.set(STORAGE_KEY, profiles);
-        await storage.set(ACTIVE_PROFILE_KEY, activeProfileId);
+      let finalProfiles = profiles;
+      let finalActiveId = localStorage.getItem(ACTIVE_PROFILE_KEY);
+
+      if (!finalProfiles || finalProfiles.length === 0) {
+        const defaultProfile = await profilesApi.create('My Budget');
+        finalProfiles = [defaultProfile];
+        finalActiveId = defaultProfile.id;
+        localStorage.setItem(ACTIVE_PROFILE_KEY, finalActiveId);
       }
 
       // Validate active profile exists
-      if (!activeProfileId || !profiles.find((p) => p.id === activeProfileId)) {
-        activeProfileId = profiles[0].id;
-        await storage.set(ACTIVE_PROFILE_KEY, activeProfileId);
+      if (!finalActiveId || !finalProfiles?.find((p) => p.id === finalActiveId)) {
+        finalActiveId = finalProfiles[0].id;
+        localStorage.setItem(ACTIVE_PROFILE_KEY, finalActiveId);
       }
 
       set({
-        profiles,
-        activeProfileId,
+        profiles: finalProfiles,
+        activeProfileId: finalActiveId,
         isLoading: false,
         isInitialized: true,
       });
     } catch (error) {
       console.error('Failed to initialize budget store:', error);
-      // Create default state on error
-      const defaultProfile = createDefaultProfile();
       set({
-        profiles: [defaultProfile],
-        activeProfileId: defaultProfile.id,
+        profiles: [],
+        activeProfileId: null,
         isLoading: false,
         isInitialized: true,
       });
@@ -170,28 +146,16 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
   // --------------------------------------------------------------------------
 
   createProfile: async (name: string) => {
-    const profile: BudgetProfile = {
-      id: generateId(),
-      name,
-      accounts: [],
-      rules: [],
-      createdAt: now(),
-      updatedAt: now(),
-    };
-
+    const profile = await profilesApi.create(name);
     const profiles = [...get().profiles, profile];
-    await storage.set(STORAGE_KEY, profiles);
     set({ profiles, activeProfileId: profile.id });
-    await storage.set(ACTIVE_PROFILE_KEY, profile.id);
-
+    localStorage.setItem(ACTIVE_PROFILE_KEY, profile.id);
     return profile;
   },
 
   updateProfile: async (id: string, name: string) => {
-    const profiles = get().profiles.map((p) =>
-      p.id === id ? { ...p, name, updatedAt: now() } : p
-    );
-    await storage.set(STORAGE_KEY, profiles);
+    const updatedProfile = await profilesApi.update(id, name);
+    const profiles = get().profiles.map((p) => p.id === id ? updatedProfile : p);
     set({ profiles });
   },
 
@@ -201,14 +165,14 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
       throw new Error('Cannot delete the last profile');
     }
 
+    await profilesApi.delete(id);
     const profiles = currentProfiles.filter((p) => p.id !== id);
-    await storage.set(STORAGE_KEY, profiles);
 
     // Update active profile if deleted
     let { activeProfileId } = get();
     if (activeProfileId === id) {
       activeProfileId = profiles[0].id;
-      await storage.set(ACTIVE_PROFILE_KEY, activeProfileId);
+      localStorage.setItem(ACTIVE_PROFILE_KEY, activeProfileId);
     }
 
     set({ profiles, activeProfileId });
@@ -216,32 +180,14 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
 
   setActiveProfile: (id: string) => {
     set({ activeProfileId: id });
-    storage.set(ACTIVE_PROFILE_KEY, id);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, id);
   },
 
   duplicateProfile: async (id: string) => {
-    const source = get().profiles.find((p) => p.id === id);
-    if (!source) throw new Error('Profile not found');
-
-    const duplicate: BudgetProfile = {
-      ...source,
-      id: generateId(),
-      name: `${source.name} (Copy)`,
-      rules: source.rules.map((r) => ({
-        ...r,
-        id: generateId(),
-        createdAt: now(),
-        updatedAt: now(),
-      })),
-      createdAt: now(),
-      updatedAt: now(),
-    };
-
+    const duplicate = await profilesApi.duplicate(id);
     const profiles = [...get().profiles, duplicate];
-    await storage.set(STORAGE_KEY, profiles);
     set({ profiles, activeProfileId: duplicate.id });
-    await storage.set(ACTIVE_PROFILE_KEY, duplicate.id);
-
+    localStorage.setItem(ACTIVE_PROFILE_KEY, duplicate.id);
     return duplicate;
   },
 
@@ -253,22 +199,15 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     const { activeProfileId, profiles } = get();
     if (!activeProfileId) throw new Error('No active profile');
 
-    const rule: BudgetRule = {
-      ...data,
-      id: generateId(),
-      createdAt: now(),
-      updatedAt: now(),
-    };
+    const rule = await rulesApi.create(activeProfileId, data);
 
     const updatedProfiles = profiles.map((p) =>
       p.id === activeProfileId
-        ? { ...p, rules: [...p.rules, rule], updatedAt: now() }
+        ? { ...p, rules: [...p.rules, rule] }
         : p
     );
 
-    await storage.set(STORAGE_KEY, updatedProfiles);
     set({ profiles: updatedProfiles });
-
     return rule;
   },
 
@@ -276,19 +215,17 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     const { activeProfileId, profiles } = get();
     if (!activeProfileId) throw new Error('No active profile');
 
+    const updatedRule = await rulesApi.update(ruleId, data);
+
     const updatedProfiles = profiles.map((p) =>
       p.id === activeProfileId
         ? {
             ...p,
-            rules: p.rules.map((r) =>
-              r.id === ruleId ? { ...r, ...data, updatedAt: now() } : r
-            ),
-            updatedAt: now(),
+            rules: p.rules.map((r) => r.id === ruleId ? updatedRule : r),
           }
         : p
     );
 
-    await storage.set(STORAGE_KEY, updatedProfiles);
     set({ profiles: updatedProfiles });
   },
 
@@ -296,17 +233,14 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     const { activeProfileId, profiles } = get();
     if (!activeProfileId) throw new Error('No active profile');
 
+    await rulesApi.delete(ruleId);
+
     const updatedProfiles = profiles.map((p) =>
       p.id === activeProfileId
-        ? {
-            ...p,
-            rules: p.rules.filter((r) => r.id !== ruleId),
-            updatedAt: now(),
-          }
+        ? { ...p, rules: p.rules.filter((r) => r.id !== ruleId) }
         : p
     );
 
-    await storage.set(STORAGE_KEY, updatedProfiles);
     set({ profiles: updatedProfiles });
   },
 
@@ -318,21 +252,15 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     const { activeProfileId, profiles } = get();
     if (!activeProfileId) throw new Error('No active profile');
 
-    const account: Account = {
-      ...data,
-      id: generateId(),
-      createdAt: now(),
-    };
+    const account = await accountsApi.create(activeProfileId, data);
 
     const updatedProfiles = profiles.map((p) =>
       p.id === activeProfileId
-        ? { ...p, accounts: [...p.accounts, account], updatedAt: now() }
+        ? { ...p, accounts: [...p.accounts, account] }
         : p
     );
 
-    await storage.set(STORAGE_KEY, updatedProfiles);
     set({ profiles: updatedProfiles });
-
     return account;
   },
 
@@ -340,19 +268,17 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     const { activeProfileId, profiles } = get();
     if (!activeProfileId) throw new Error('No active profile');
 
+    const updatedAccount = await accountsApi.update(id, data);
+
     const updatedProfiles = profiles.map((p) =>
       p.id === activeProfileId
         ? {
             ...p,
-            accounts: p.accounts.map((a) =>
-              a.id === id ? { ...a, ...data } : a
-            ),
-            updatedAt: now(),
+            accounts: p.accounts.map((a) => a.id === id ? updatedAccount : a),
           }
         : p
     );
 
-    await storage.set(STORAGE_KEY, updatedProfiles);
     set({ profiles: updatedProfiles });
   },
 
@@ -369,17 +295,14 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
       );
     }
 
+    await accountsApi.delete(id);
+
     const updatedProfiles = profiles.map((p) =>
       p.id === activeProfileId
-        ? {
-            ...p,
-            accounts: p.accounts.filter((a) => a.id !== id),
-            updatedAt: now(),
-          }
+        ? { ...p, accounts: p.accounts.filter((a) => a.id !== id) }
         : p
     );
 
-    await storage.set(STORAGE_KEY, updatedProfiles);
     set({ profiles: updatedProfiles });
   },
 
@@ -438,5 +361,10 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     const totalExpenses = get().getTotalExpenses();
     return totalIncome - totalExpenses;
   },
+
+  // --------------------------------------------------------------------------
+  // Tracking Actions
+  // --------------------------------------------------------------------------
+  // (Removed)
 }));
 
