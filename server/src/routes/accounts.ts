@@ -4,6 +4,8 @@
 
 import { Router } from 'express';
 import { db, generateId, now } from '../database/db.js';
+import type { AuthRequest } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import type {
     Account,
     AccountRow,
@@ -12,6 +14,9 @@ import type {
 } from '../types/index.js';
 
 export const accountsRouter = Router();
+
+// Apply authentication middleware to all routes
+accountsRouter.use(authMiddleware);
 
 // ----------------------------------------------------------------------------
 // Helper Functions
@@ -33,14 +38,16 @@ function mapAccountRow(row: AccountRow): Account {
 
 // GET /api/profiles/:profileId/accounts - List accounts for profile
 accountsRouter.get('/profiles/:profileId/accounts', (req, res) => {
-  const accounts = db.prepare('SELECT * FROM accounts WHERE profile_id = ? ORDER BY created_at ASC')
-    .all(req.params.profileId) as AccountRow[];
+  const { userId } = req as AuthRequest;
+  const accounts = db.prepare('SELECT * FROM accounts WHERE profile_id = ? AND user_id = ? ORDER BY created_at ASC')
+    .all(req.params.profileId, userId) as AccountRow[];
   
   res.json(accounts.map(mapAccountRow));
 });
 
 // POST /api/profiles/:profileId/accounts - Create account
 accountsRouter.post('/profiles/:profileId/accounts', (req, res) => {
+  const { userId } = req as AuthRequest;
   const { name, type, startingBalance } = req.body as CreateAccountRequest;
   
   // Validation
@@ -56,8 +63,8 @@ accountsRouter.post('/profiles/:profileId/accounts', (req, res) => {
     return res.status(400).json({ error: 'Starting balance must be a number' });
   }
 
-  // Check if profile exists
-  const profile = db.prepare('SELECT id FROM profiles WHERE id = ?').get(req.params.profileId);
+  // Check if profile exists and belongs to user
+  const profile = db.prepare('SELECT id FROM profiles WHERE id = ? AND user_id = ?').get(req.params.profileId, userId);
   if (!profile) {
     return res.status(404).json({ error: 'Profile not found' });
   }
@@ -66,8 +73,8 @@ accountsRouter.post('/profiles/:profileId/accounts', (req, res) => {
   const timestamp = now();
 
   db.prepare(
-    'INSERT INTO accounts (id, profile_id, name, type, starting_balance, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, req.params.profileId, name.trim(), type, startingBalance, timestamp);
+    'INSERT INTO accounts (id, user_id, profile_id, name, type, starting_balance, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, userId, req.params.profileId, name.trim(), type, startingBalance, timestamp);
 
   const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(id) as AccountRow;
   res.status(201).json(mapAccountRow(account));
@@ -75,6 +82,7 @@ accountsRouter.post('/profiles/:profileId/accounts', (req, res) => {
 
 // PUT /api/accounts/:id - Update account
 accountsRouter.put('/accounts/:id', (req, res) => {
+  const { userId } = req as AuthRequest;
   const { name, type, startingBalance } = req.body as UpdateAccountRequest;
   
   const updates: string[] = [];
@@ -109,9 +117,10 @@ accountsRouter.put('/accounts/:id', (req, res) => {
   }
 
   values.push(req.params.id);
+  values.push(userId);
 
   const result = db.prepare(
-    `UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`
+    `UPDATE accounts SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`
   ).run(...values);
 
   if (result.changes === 0) {
@@ -124,10 +133,12 @@ accountsRouter.put('/accounts/:id', (req, res) => {
 
 // DELETE /api/accounts/:id - Delete account
 accountsRouter.delete('/accounts/:id', (req, res) => {
+  const { userId } = req as AuthRequest;
+  
   // Check if any rules are linked to this account
   const linkedRules = db.prepare(
-    'SELECT COUNT(*) as count FROM budget_rules WHERE account_id = ? OR to_account_id = ?'
-  ).get(req.params.id, req.params.id) as { count: number };
+    'SELECT COUNT(*) as count FROM budget_rules WHERE (account_id = ? OR to_account_id = ?) AND user_id = ?'
+  ).get(req.params.id, req.params.id, userId) as { count: number };
 
   if (linkedRules.count > 0) {
     return res.status(400).json({
@@ -135,7 +146,7 @@ accountsRouter.delete('/accounts/:id', (req, res) => {
     });
   }
 
-  const result = db.prepare('DELETE FROM accounts WHERE id = ?').run(req.params.id);
+  const result = db.prepare('DELETE FROM accounts WHERE id = ? AND user_id = ?').run(req.params.id, userId);
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Account not found' });

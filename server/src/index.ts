@@ -7,6 +7,7 @@ import express from 'express';
 import { initializeDatabase } from './database/db.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { accountsRouter } from './routes/accounts.js';
+import { authRouter } from './routes/auth.js';
 import { profilesRouter } from './routes/profiles.js';
 import { rulesRouter } from './routes/rules.js';
 
@@ -41,7 +42,10 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes
+// Authentication routes (public)
+app.use('/api/auth', authRouter);
+
+// API routes (protected)
 app.use('/api/profiles', profilesRouter);
 app.use('/api', accountsRouter);
 app.use('/api', rulesRouter);

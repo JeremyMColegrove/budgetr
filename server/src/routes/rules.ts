@@ -4,6 +4,8 @@
 
 import { Router } from 'express';
 import { db, generateId, now } from '../database/db.js';
+import type { AuthRequest } from '../middleware/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 import type {
     BudgetRule,
     BudgetRuleRow,
@@ -12,6 +14,9 @@ import type {
 } from '../types/index.js';
 
 export const rulesRouter = Router();
+
+// Apply authentication middleware to all routes
+rulesRouter.use(authMiddleware);
 
 // ----------------------------------------------------------------------------
 // Helper Functions
@@ -41,14 +46,28 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
 
 // GET /api/profiles/:profileId/rules - List rules for profile
 rulesRouter.get('/profiles/:profileId/rules', (req, res) => {
-  const rules = db.prepare('SELECT * FROM budget_rules WHERE profile_id = ? ORDER BY created_at ASC')
-    .all(req.params.profileId) as BudgetRuleRow[];
+  const { userId } = req as AuthRequest;
+  const rules = db.prepare('SELECT * FROM budget_rules WHERE profile_id = ? AND user_id = ? ORDER BY created_at ASC')
+    .all(req.params.profileId, userId) as BudgetRuleRow[];
   
   res.json(rules.map(mapBudgetRuleRow));
 });
 
+// GET /api/profiles/:profileId/rules/summary - Get rules summary with calculated values
+rulesRouter.get('/profiles/:profileId/rules/summary', async (req, res) => {
+  try {
+    const { RuleManager } = await import('../engine/RuleManager.js');
+    const ruleManager = new RuleManager(req.params.profileId);
+    const summary = ruleManager.getSummary();
+    res.json(summary);
+  } catch (error) {
+    throw error;
+  }
+});
+
 // POST /api/profiles/:profileId/rules - Create rule
 rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
+  const { userId } = req as AuthRequest;
   const {
     label,
     amount,
@@ -87,8 +106,8 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     return res.status(400).json({ error: 'Valid frequency is required for recurring rules' });
   }
 
-  // Check if profile exists
-  const profile = db.prepare('SELECT id FROM profiles WHERE id = ?').get(req.params.profileId);
+  // Check if profile exists and belongs to user
+  const profile = db.prepare('SELECT id FROM profiles WHERE id = ? AND user_id = ?').get(req.params.profileId, userId);
   if (!profile) {
     return res.status(404).json({ error: 'Profile not found' });
   }
@@ -98,11 +117,12 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
 
   db.prepare(
     `INSERT INTO budget_rules (
-      id, profile_id, label, amount, type, account_id, to_account_id,
+      id, user_id, profile_id, label, amount, type, account_id, to_account_id,
       category, notes, is_recurring, frequency, start_date, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
+    userId,
     req.params.profileId,
     label.trim(),
     amount,
@@ -124,6 +144,7 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
 
 // PUT /api/rules/:id - Update rule
 rulesRouter.put('/rules/:id', (req, res) => {
+  const { userId } = req as AuthRequest;
   const data = req.body as UpdateBudgetRuleRequest;
   
   const updates: string[] = [];
@@ -206,9 +227,10 @@ rulesRouter.put('/rules/:id', (req, res) => {
   values.push(now());
 
   values.push(req.params.id);
+  values.push(userId);
 
   const result = db.prepare(
-    `UPDATE budget_rules SET ${updates.join(', ')} WHERE id = ?`
+    `UPDATE budget_rules SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`
   ).run(...values);
 
   if (result.changes === 0) {
@@ -221,7 +243,8 @@ rulesRouter.put('/rules/:id', (req, res) => {
 
 // DELETE /api/rules/:id - Delete rule
 rulesRouter.delete('/rules/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM budget_rules WHERE id = ?').run(req.params.id);
+  const { userId } = req as AuthRequest;
+  const result = db.prepare('DELETE FROM budget_rules WHERE id = ? AND user_id = ?').run(req.params.id, userId);
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Rule not found' });

@@ -140,6 +140,30 @@
     display: none !important;
   }
 
+  /* Completely hide sidebar and all its components */
+  [data-sidebar="sidebar"],
+  [data-slot="sidebar"],
+  [data-slot="sidebar-container"],
+  [data-slot="sidebar-gap"] {
+    display: none !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide the peer element that creates the sidebar space */
+  .peer.group {
+    display: none !important;
+  }
+
+  /* Make main content take full width without sidebar offset */
+  [data-sidebar="inset"],
+  [data-slot="sidebar-inset"] {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    width: 100% !important;
+  }
+
   /* Ensure background colors print correctly */
   * {
     -webkit-print-color-adjust: exact !important;

@@ -7,10 +7,10 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { ProjectionResult } from '@/lib/projections';
 import { cn } from '@/lib/utils';
 import type { Account, AccountType } from '@/types/budget';
 import { ACCOUNT_TYPE_LABELS, ASSET_ACCOUNT_TYPES } from '@/types/budget';
+import type { ProjectionResult } from '@/types/engine';
 import { Banknote, CreditCard, Landmark, Pencil, PiggyBank, Trash2, TrendingUp } from 'lucide-react';
 
 // ----------------------------------------------------------------------------

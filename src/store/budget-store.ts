@@ -10,8 +10,7 @@ import type {
     AccountFormData,
     BudgetProfile,
     BudgetRule,
-    BudgetRuleFormData,
-    Frequency,
+    BudgetRuleFormData
 } from '@/types/budget';
 import { create } from 'zustand';
 
@@ -20,26 +19,6 @@ import { create } from 'zustand';
 // ----------------------------------------------------------------------------
 
 const ACTIVE_PROFILE_KEY = 'active_profile_id';
-
-// Monthly multipliers for frequency normalization
-const FREQUENCY_TO_MONTHLY: Record<Frequency, number> = {
-  weekly: 4.33,
-  'bi-weekly': 2.17,
-  monthly: 1,
-  yearly: 1 / 12,
-};
-
-// ----------------------------------------------------------------------------
-// Helper Functions
-// ----------------------------------------------------------------------------
-
-/** Calculate monthly normalized amount for a rule */
-export function getMonthlyNormalizedAmount(rule: BudgetRule): number {
-  if (!rule.isRecurring || !rule.frequency) {
-    return rule.amount; // Non-recurring = one-time, treat as monthly
-  }
-  return rule.amount * FREQUENCY_TO_MONTHLY[rule.frequency];
-}
 
 // ----------------------------------------------------------------------------
 // Store Interface
@@ -77,10 +56,6 @@ interface BudgetStore {
   getAccounts: () => Account[];
   getAccountById: (id: string) => Account | undefined;
   getRulesForAccount: (accountId: string) => BudgetRule[];
-  getNetWorth: () => number;
-  getAmountLeftToAllocate: () => number;
-  getTotalIncome: () => number;
-  getTotalExpenses: () => number;
 }
 
 // ----------------------------------------------------------------------------
@@ -331,40 +306,5 @@ export const useBudgetStore = create<BudgetStore>((set, get) => ({
     // Match rules where accountId OR toAccountId equals the target
     return profile.rules.filter((r) => r.accountId === accountId || r.toAccountId === accountId);
   },
-
-  getNetWorth: () => {
-    const accounts = get().getAccounts();
-    // Liabilities are stored as negative, so simple sum gives net worth
-    return accounts.reduce((sum, account) => sum + account.startingBalance, 0);
-  },
-
-  getTotalIncome: () => {
-    const profile = get().getActiveProfile();
-    if (!profile) return 0;
-
-    return profile.rules
-      .filter((r) => r.type === 'income')
-      .reduce((sum, r) => sum + getMonthlyNormalizedAmount(r), 0);
-  },
-
-  getTotalExpenses: () => {
-    const profile = get().getActiveProfile();
-    if (!profile) return 0;
-
-    return profile.rules
-      .filter((r) => r.type === 'expense')
-      .reduce((sum, r) => sum + getMonthlyNormalizedAmount(r), 0);
-  },
-
-  getAmountLeftToAllocate: () => {
-    const totalIncome = get().getTotalIncome();
-    const totalExpenses = get().getTotalExpenses();
-    return totalIncome - totalExpenses;
-  },
-
-  // --------------------------------------------------------------------------
-  // Tracking Actions
-  // --------------------------------------------------------------------------
-  // (Removed)
 }));
 

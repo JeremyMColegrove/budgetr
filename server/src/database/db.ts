@@ -27,7 +27,53 @@ db.pragma('journal_mode = WAL');
 // Initialize schema
 export function initializeDatabase(): void {
   db.exec(SCHEMA);
+  
+  // Run migration for existing data
+  migrateExistingData();
+  
   console.log('✓ Database initialized');
+}
+
+// Migration: Add default user for existing data
+function migrateExistingData(): void {
+  // Check if users table is empty
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+  
+  if (userCount.count === 0) {
+    // Check if there's existing data that needs migration
+    const profileCount = db.prepare('SELECT COUNT(*) as count FROM profiles').get() as { count: number };
+    
+    if (profileCount.count > 0) {
+      console.log('⚠ Migrating existing data to new authentication schema...');
+      
+      const defaultUserId = generateId();
+      const timestamp = now();
+      
+      // Create default user
+      db.prepare('INSERT INTO users (id, created_at) VALUES (?, ?)').run(defaultUserId, timestamp);
+      
+      // Update all existing profiles, accounts, and rules with the default user_id
+      // Note: SQLite doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS in a clean way
+      // The schema already defines these columns, so we just need to update NULL values
+      
+      try {
+        db.prepare('UPDATE profiles SET user_id = ? WHERE user_id IS NULL OR user_id = ""').run(defaultUserId);
+        db.prepare('UPDATE accounts SET user_id = ? WHERE user_id IS NULL OR user_id = ""').run(defaultUserId);
+        db.prepare('UPDATE budget_rules SET user_id = ? WHERE user_id IS NULL OR user_id = ""').run(defaultUserId);
+        
+        console.log('✓ Migration complete');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('⚠  IMPORTANT: Default Access Key Generated');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log(`   Access Key: ${defaultUserId}`);
+        console.log('   Save this key - it\'s your only way to access existing data!');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      } catch (error) {
+        // If columns don't exist yet (fresh install), this is fine
+        console.log('✓ Fresh installation - no migration needed');
+      }
+    }
+  }
 }
 
 // Helper to generate UUID

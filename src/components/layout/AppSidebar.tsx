@@ -16,7 +16,8 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { LayoutDashboard, Settings, Wallet } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { LayoutDashboard, LogOut, Settings, Wallet } from 'lucide-react';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -50,8 +51,16 @@ const NAV_ITEMS: NavItem[] = [
 // ----------------------------------------------------------------------------
 
 export function AppSidebar({ activePage, onNavigate }: AppSidebarProps) {
+    const { logout } = useAuth();
+
+    const handleLogout = () => {
+        if (confirm('Are you sure you want to log out?')) {
+            logout();
+        }
+    };
+
     return (
-        <Sidebar collapsible="icon">
+        <Sidebar collapsible="icon" className="print:hidden">
             <SidebarHeader className="border-b px-4 py-3">
                 <div className="flex items-center gap-2">
                     <div className="size-6 rounded-md bg-linear-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs">
@@ -85,7 +94,19 @@ export function AppSidebar({ activePage, onNavigate }: AppSidebarProps) {
                 </SidebarGroup>
             </SidebarContent>
 
-            <SidebarFooter className="border-t px-4 py-2">
+            <SidebarFooter className="border-t px-4 py-2 space-y-2">
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton
+                            onClick={handleLogout}
+                            tooltip="Log Out"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                            <LogOut className="size-4" />
+                            <span>Log Out</span>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                </SidebarMenu>
                 <p className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
                     v1.0.0
                 </p>

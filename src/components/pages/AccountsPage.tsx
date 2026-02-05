@@ -20,11 +20,17 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { calculateAllProjections } from '@/lib/projections';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { profilesApi } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useBudgetStore } from '@/store/budget-store';
 import type { Account } from '@/types/budget';
-import { ASSET_ACCOUNT_TYPES } from '@/types/budget';
 import { Plus, TrendingUp, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -36,9 +42,9 @@ export function AccountsPage() {
     const initialize = useBudgetStore((s) => s.initialize);
     const isLoading = useBudgetStore((s) => s.isLoading);
     const isInitialized = useBudgetStore((s) => s.isInitialized);
+    const profiles = useBudgetStore((s) => s.profiles);
     const accounts = useBudgetStore((s) => s.getAccounts());
     const activeProfile = useBudgetStore((s) => s.getActiveProfile());
-    const netWorth = useBudgetStore((s) => s.getNetWorth());
     const deleteAccount = useBudgetStore((s) => s.deleteAccount);
 
     // Form dialog state
@@ -52,33 +58,53 @@ export function AccountsPage() {
 
     // Projection state
     const [projectionMonths, setProjectionMonths] = useState(6);
+    const [selectedBudgetId, setSelectedBudgetId] = useState<string | null>(null);
 
-    // Initialize store on mount
+    // Initialize store on mount and set default selected budget
     useEffect(() => {
         initialize();
     }, [initialize]);
 
-    // Calculate projections for all accounts
-    const projections = activeProfile
-        ? calculateAllProjections(accounts, activeProfile.rules, projectionMonths)
-        : new Map();
+    // Set default selected budget to active profile
+    useEffect(() => {
+        if (activeProfile && !selectedBudgetId) {
+            setSelectedBudgetId(activeProfile.id);
+        }
+    }, [activeProfile, selectedBudgetId]);
 
-    // Calculate current assets and liabilities totals
-    const totalAssets = accounts
-        .filter((a) => ASSET_ACCOUNT_TYPES.includes(a.type))
-        .reduce((sum, a) => sum + a.startingBalance, 0);
-    const totalLiabilities = accounts
-        .filter((a) => !ASSET_ACCOUNT_TYPES.includes(a.type))
-        .reduce((sum, a) => sum + a.startingBalance, 0);
+    // Fetch projections from backend
+    const [projectionsData, setProjectionsData] = useState<import('@/types/engine').AccountsWithProjectionsResponse | null>(null);
+    const [isLoadingProjections, setIsLoadingProjections] = useState(false);
 
-    // Calculate projected totals
-    const projectedAssets = accounts
-        .filter((a) => ASSET_ACCOUNT_TYPES.includes(a.type))
-        .reduce((sum, a) => sum + (projections.get(a.id)?.projectedBalance ?? a.startingBalance), 0);
-    const projectedLiabilities = accounts
-        .filter((a) => !ASSET_ACCOUNT_TYPES.includes(a.type))
-        .reduce((sum, a) => sum + (projections.get(a.id)?.projectedBalance ?? a.startingBalance), 0);
-    const projectedNetWorth = projectedAssets + projectedLiabilities;
+    useEffect(() => {
+        const fetchProjections = async () => {
+            if (!activeProfile) return;
+
+            setIsLoadingProjections(true);
+            try {
+                const data = await profilesApi.getAccountsWithProjections(
+                    activeProfile.id,
+                    projectionMonths,
+                    selectedBudgetId ?? undefined
+                );
+                setProjectionsData(data);
+            } catch (error) {
+                console.error('Failed to fetch projections:', error);
+            } finally {
+                setIsLoadingProjections(false);
+            }
+        };
+
+        fetchProjections();
+    }, [activeProfile, projectionMonths, selectedBudgetId]);
+
+    // Extract values from backend response
+    const netWorth = projectionsData?.netWorthAnalysis.currentNetWorth ?? 0;
+    const totalAssets = projectionsData?.netWorthAnalysis.currentAssets ?? 0;
+    const totalLiabilities = projectionsData?.netWorthAnalysis.currentLiabilities ?? 0;
+    const projectedNetWorth = projectionsData?.netWorthAnalysis.projectedNetWorth ?? 0;
+    const projectedAssets = projectionsData?.netWorthAnalysis.projectedAssets ?? 0;
+    const projectedLiabilities = projectionsData?.netWorthAnalysis.projectedLiabilities ?? 0;
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-US', {
@@ -131,8 +157,28 @@ export function AccountsPage() {
                     description="Track your net worth and manage asset & liability accounts."
                     actions={
                         <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 mr-2 bg-muted/50 px-3 py-1.5 rounded-md border border-border/50">
-                                <Label htmlFor="months" className="text-xs font-medium text-muted-foreground whitespace-nowrap print:hidden">
+                            <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-md border border-border/50 print:hidden">
+                                <Label htmlFor="budget" className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                                    Budget
+                                </Label>
+                                <Select
+                                    value={selectedBudgetId ?? undefined}
+                                    onValueChange={setSelectedBudgetId}
+                                >
+                                    <SelectTrigger id="budget" className="w-[140px] h-7 text-xs bg-background border-border/50 shadow-none focus:ring-1">
+                                        <SelectValue placeholder="Select budget" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {profiles.map((profile) => (
+                                            <SelectItem key={profile.id} value={profile.id} className="text-xs">
+                                                {profile.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-md border border-border/50 print:hidden">
+                                <Label htmlFor="months" className="text-xs font-medium text-muted-foreground whitespace-nowrap">
                                     Projection
                                 </Label>
                                 <Input
@@ -142,9 +188,9 @@ export function AccountsPage() {
                                     max="120"
                                     value={projectionMonths}
                                     onChange={(e) => setProjectionMonths(Math.max(1, parseInt(e.target.value) || 1))}
-                                    className="w-14 h-7 text-center text-xs print:hidden bg-background border-border/50 shadow-none focus-visible:ring-1"
+                                    className="w-14 h-7 text-center text-xs bg-background border-border/50 shadow-none focus-visible:ring-1"
                                 />
-                                <span className="text-xs text-muted-foreground print:hidden">mo</span>
+                                <span className="text-xs text-muted-foreground">mo</span>
                             </div>
                             <Button onClick={handleAddAccount} size="sm" className="h-9 px-4 shadow-sm" data-no-print>
                                 <Plus className="size-4 mr-1.5" />
@@ -172,7 +218,7 @@ export function AccountsPage() {
                                 </div>
                                 <div className={cn(
                                     "text-sm font-mono flex items-center gap-2",
-                                    projectedNetWorth >= netWorth ? 'text-emerald-600/80' : 'text-rose-600/80'
+                                    projectedNetWorth >= 0 ? 'text-emerald-600/80' : 'text-rose-600/80'
                                 )}>
                                     <span>Projection ({projectionMonths}mo): {formatCurrency(projectedNetWorth)}</span>
                                     {projectedNetWorth > netWorth && <TrendingUp className="size-3" />}
@@ -229,15 +275,20 @@ export function AccountsPage() {
                         </div>
                     ) : (
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                            {accounts.map((account) => (
-                                <AccountCard
-                                    key={account.id}
-                                    account={account}
-                                    projection={projections.get(account.id) ?? null}
-                                    onEdit={handleEditAccount}
-                                    onDelete={handleDeleteAccount}
-                                />
-                            ))}
+                            {accounts.map((account) => {
+                                const accountProjection = projectionsData?.accounts.find(
+                                    (ap) => ap.account.id === account.id
+                                );
+                                return (
+                                    <AccountCard
+                                        key={account.id}
+                                        account={account}
+                                        projection={accountProjection?.projection ?? null}
+                                        onEdit={handleEditAccount}
+                                        onDelete={handleDeleteAccount}
+                                    />
+                                );
+                            })}
                         </div>
                     )}
                 </main>

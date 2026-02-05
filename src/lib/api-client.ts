@@ -34,12 +34,26 @@ async function request<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
+  // Get access key from localStorage
+  const accessKey = localStorage.getItem('access_key');
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  
+  // Add access key header if available
+  if (accessKey) {
+    headers['x-access-key'] = accessKey;
+  }
+  
+  // Merge with any additional headers
+  if (options?.headers) {
+    Object.assign(headers, options.headers);
+  }
+  
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
   
   return handleResponse<T>(response);
@@ -82,6 +96,22 @@ export const profilesApi = {
     return request<BudgetProfile>(`/profiles/${id}/duplicate`, {
       method: 'POST',
     });
+  },
+
+  async getSummary(id: string): Promise<import('@/types/engine').ProfileSummary> {
+    return request(`/profiles/${id}/summary`);
+  },
+
+  async getAccountsWithProjections(
+    id: string,
+    months: number,
+    budgetId?: string
+  ): Promise<import('@/types/engine').AccountsWithProjectionsResponse> {
+    const params = new URLSearchParams({ months: months.toString() });
+    if (budgetId) {
+      params.append('budgetId', budgetId);
+    }
+    return request(`/profiles/${id}/accounts/projections?${params.toString()}`);
   },
 };
 
@@ -142,5 +172,9 @@ export const rulesApi = {
     return request<void>(`/rules/${id}`, {
       method: 'DELETE',
     });
+  },
+
+  async getSummary(profileId: string): Promise<import('@/types/engine').RuleSummary> {
+    return request(`/profiles/${profileId}/rules/summary`);
   },
 };

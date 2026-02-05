@@ -6,9 +6,20 @@ export type Frequency = 'weekly' | 'bi-weekly' | 'monthly' | 'yearly';
 export type TransactionType = 'income' | 'expense';
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment';
 
+/** Account types that are considered assets (positive contribution to net worth) */
+export const ASSET_ACCOUNT_TYPES: AccountType[] = ['checking', 'savings', 'investment'];
+
+/** Account types that are considered liabilities (negative contribution to net worth) */
+export const LIABILITY_ACCOUNT_TYPES: AccountType[] = ['credit_card', 'loan'];
+
 // ----------------------------------------------------------------------------
 // Domain Models
 // ----------------------------------------------------------------------------
+
+export interface User {
+  id: string;
+  createdAt: string;
+}
 
 export interface Account {
   id: string;
@@ -47,8 +58,14 @@ export interface BudgetProfile {
 // Database Row Types
 // ----------------------------------------------------------------------------
 
+export interface UserRow {
+  id: string;
+  created_at: string;
+}
+
 export interface ProfileRow {
   id: string;
+  user_id: string;
   name: string;
   created_at: string;
   updated_at: string;
@@ -56,6 +73,7 @@ export interface ProfileRow {
 
 export interface AccountRow {
   id: string;
+  user_id: string;
   profile_id: string;
   name: string;
   type: AccountType;
@@ -65,6 +83,7 @@ export interface AccountRow {
 
 export interface BudgetRuleRow {
   id: string;
+  user_id: string;
   profile_id: string;
   label: string;
   amount: number;
@@ -84,6 +103,20 @@ export interface BudgetRuleRow {
 // API Request/Response Types
 // ----------------------------------------------------------------------------
 
+// Authentication
+export interface RegisterResponse {
+  accessKey: string;
+}
+
+export interface LoginRequest {
+  accessKey: string;
+}
+
+export interface LoginResponse {
+  success: boolean;
+}
+
+// Profiles
 export interface CreateProfileRequest {
   name: string;
 }
@@ -92,6 +125,7 @@ export interface UpdateProfileRequest {
   name: string;
 }
 
+// Accounts
 export interface CreateAccountRequest {
   name: string;
   type: AccountType;
@@ -104,6 +138,7 @@ export interface UpdateAccountRequest {
   startingBalance?: number;
 }
 
+// Budget Rules
 export interface CreateBudgetRuleRequest {
   label: string;
   amount: number;
