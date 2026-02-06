@@ -6,6 +6,7 @@
 import type { ProjectionResult } from '../types/engine.js';
 import type { Account, BudgetRule } from '../types/index.js';
 import { ASSET_ACCOUNT_TYPES } from '../types/index.js';
+import { getCurrentMonth, getNextMonth } from '../utils/date-utils.js';
 import { CalculationEngine } from './CalculationEngine.js';
 
 // ----------------------------------------------------------------------------
@@ -15,22 +16,29 @@ import { CalculationEngine } from './CalculationEngine.js';
 export class ProjectionEngine {
   /**
    * Calculate monthly income for a specific account from budget rules
-   * Includes:
-   * - Rules where accountId matches and type is 'income' (direct deposits)
-   * - Rules where toAccountId matches and type is 'expense' (debt paydown reduces liability)
+   * identifying which rules are active in the target month
    */
   private static getMonthlyIncomeForAccount(
     accountId: string,
-    rules: BudgetRule[]
+    rules: BudgetRule[],
+    targetMonth: string
   ): number {
     // Direct income to this account
     const directIncome = rules
-      .filter((r) => r.accountId === accountId && r.type === 'income')
+      .filter((r) => 
+        r.accountId === accountId && 
+        r.type === 'income' &&
+        ProjectionEngine.isRuleActiveInMonth(r, targetMonth)
+      )
       .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
 
     // Debt paydown: expenses with toAccountId reduce liability (treated as "income" for the loan)
     const debtPaydown = rules
-      .filter((r) => r.toAccountId === accountId && r.type === 'expense')
+      .filter((r) => 
+        r.toAccountId === accountId && 
+        r.type === 'expense' &&
+        ProjectionEngine.isRuleActiveInMonth(r, targetMonth)
+      )
       .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
 
     return directIncome + debtPaydown;
@@ -38,15 +46,38 @@ export class ProjectionEngine {
 
   /**
    * Calculate monthly expenses for a specific account from budget rules
-   * Only includes rules where the accountId matches and type is 'expense'
+   * identifying which rules are active in the target month
    */
   private static getMonthlyExpensesForAccount(
     accountId: string,
-    rules: BudgetRule[]
+    rules: BudgetRule[],
+    targetMonth: string
   ): number {
     return rules
-      .filter((r) => r.accountId === accountId && r.type === 'expense')
+      .filter((r) => 
+        r.accountId === accountId && 
+        r.type === 'expense' &&
+        ProjectionEngine.isRuleActiveInMonth(r, targetMonth)
+      )
       .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
+  }
+
+  /**
+   * Check if a rule is active in a specific month
+   */
+  private static isRuleActiveInMonth(rule: BudgetRule, month: string): boolean {
+    // Start month check: rule must start on or before this month
+    if (rule.startMonth > month) {
+      return false;
+    }
+
+    // End month check: if rule has end month, it must be on or after this month
+    // Note: If endMonth is null/undefined, it means "forever"
+    if (rule.endMonth && rule.endMonth < month) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -55,27 +86,42 @@ export class ProjectionEngine {
    * Liabilities are stored as NEGATIVE values, so all math works naturally:
    * - Assets: positive balance + income - expenses
    * - Liabilities: negative balance + payments (which are treated as income)
+   * 
+   * REFRACTORED for Versioning:
+   * Iterate month by month to account for rules starting/ending at different times.
    */
   static calculateAccountProjection(
     account: Account,
     rules: BudgetRule[],
-    months: number
+    months: number,
+    startMonth: string = getCurrentMonth()
   ): ProjectionResult {
-    const monthlyIncome = this.getMonthlyIncomeForAccount(account.id, rules);
-    const monthlyExpenses = this.getMonthlyExpensesForAccount(account.id, rules);
-    const monthlyNet = monthlyIncome - monthlyExpenses;
-    const projectedBalance = CalculationEngine.applyProjection(
-      account.startingBalance,
-      monthlyNet,
-      months
-    );
+    // Calculate "current" monthly stats for the starting month (snapshot for UI)
+    const currentMonthlyIncome = this.getMonthlyIncomeForAccount(account.id, rules, startMonth);
+    const currentMonthlyExpenses = this.getMonthlyExpensesForAccount(account.id, rules, startMonth);
+    const currentMonthlyNet = currentMonthlyIncome - currentMonthlyExpenses;
+
+    // Calculate accumulation over time
+    let projectedBalance = account.startingBalance;
+    let iterMonth = startMonth;
+
+    for (let i = 0; i < months; i++) {
+      const monthIncome = this.getMonthlyIncomeForAccount(account.id, rules, iterMonth);
+      const monthExpenses = this.getMonthlyExpensesForAccount(account.id, rules, iterMonth);
+      const monthNet = monthIncome - monthExpenses;
+      
+      projectedBalance += monthNet;
+      
+      // Advance to next month
+      iterMonth = getNextMonth(iterMonth);
+    }
 
     return {
       accountId: account.id,
       startingBalance: account.startingBalance,
-      monthlyIncome,
-      monthlyExpenses,
-      monthlyNet,
+      monthlyIncome: currentMonthlyIncome,
+      monthlyExpenses: currentMonthlyExpenses,
+      monthlyNet: currentMonthlyNet,
       projectedBalance,
       months,
     };
@@ -87,14 +133,15 @@ export class ProjectionEngine {
   static calculateAllProjections(
     accounts: Account[],
     rules: BudgetRule[],
-    months: number
+    months: number,
+    startMonth: string = getCurrentMonth()
   ): Map<string, ProjectionResult> {
     const projections = new Map<string, ProjectionResult>();
 
     for (const account of accounts) {
       projections.set(
         account.id,
-        this.calculateAccountProjection(account, rules, months)
+        this.calculateAccountProjection(account, rules, months, startMonth)
       );
     }
 
@@ -136,3 +183,4 @@ export class ProjectionEngine {
       .reduce((sum, a) => sum + (projections.get(a.id)?.projectedBalance ?? a.startingBalance), 0);
   }
 }
+
