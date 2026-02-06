@@ -6,6 +6,7 @@
 import { db } from '../database/db.js';
 import type { RuleSummary } from '../types/engine.js';
 import type { BudgetRule, BudgetRuleRow } from '../types/index.js';
+import { getCurrentMonth } from '../utils/date-utils.js';
 import { CalculationEngine } from './CalculationEngine.js';
 
 // ----------------------------------------------------------------------------
@@ -25,6 +26,8 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
     isRecurring: row.is_recurring === 1,
     frequency: row.frequency ?? undefined,
     startDate: row.start_date ?? undefined,
+    startMonth: row.start_month,
+    endMonth: row.end_month ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -42,25 +45,28 @@ export class RuleManager {
   }
 
   /**
-   * Get all rules for the profile
+   * Get budget rules for a specific month
+   * @param targetMonthISO - Month in "YYYY-MM" format
    */
-  getRules(): BudgetRule[] {
+  getBudgetRulesForMonth(targetMonthISO: string): BudgetRule[] {
     const rows = db
-      .prepare('SELECT * FROM budget_rules WHERE profile_id = ? ORDER BY created_at ASC')
-      .all(this.profileId) as BudgetRuleRow[];
+      .prepare(
+        `SELECT * FROM budget_rules 
+         WHERE profile_id = ? 
+         AND start_month <= ? 
+         AND (end_month IS NULL OR end_month >= ?)
+         ORDER BY created_at ASC`
+      )
+      .all(this.profileId, targetMonthISO, targetMonthISO) as BudgetRuleRow[];
 
     return rows.map(mapBudgetRuleRow);
   }
 
   /**
-   * Get a single rule by ID
+   * Get all rules for the profile (defaults to current month)
    */
-  getRuleById(ruleId: string): BudgetRule | null {
-    const row = db
-      .prepare('SELECT * FROM budget_rules WHERE id = ? AND profile_id = ?')
-      .get(ruleId, this.profileId) as BudgetRuleRow | undefined;
-
-    return row ? mapBudgetRuleRow(row) : null;
+  getRules(): BudgetRule[] {
+    return this.getBudgetRulesForMonth(getCurrentMonth());
   }
 
   /**

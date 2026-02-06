@@ -67,6 +67,8 @@ export interface BudgetRule {
   isRecurring: boolean;
   frequency?: Frequency;
   startDate?: string; // ISO date string
+  startMonth: string; // ISO "YYYY-MM" - for versioning (backend only)
+  endMonth?: string; // ISO "YYYY-MM" - for versioning (backend only)
   createdAt: string;
   updatedAt: string;
 }

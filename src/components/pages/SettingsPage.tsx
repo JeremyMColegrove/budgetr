@@ -4,15 +4,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { useAuth } from '@/hooks/useAuth';
 import { dataTransfer } from '@/lib/data-transfer';
 import { useBudgetStore } from '@/store/budget-store';
-import { Database, Download, FileUp, Info } from 'lucide-react';
+import { Check, Copy, Database, Download, FileUp, Info, KeyRound } from 'lucide-react';
 import { useCallback, useState } from 'react';
 
 export function SettingsPage() {
     const profiles = useBudgetStore((s) => s.profiles);
     const initialize = useBudgetStore((s) => s.initialize);
+    const { accessKey } = useAuth();
     const [importDialogOpen, setImportDialogOpen] = useState(false);
+    const [keyCopied, setKeyCopied] = useState(false);
 
     const handleExportAll = useCallback(async () => {
         const data = await dataTransfer.exportAll();
@@ -28,6 +31,14 @@ export function SettingsPage() {
         initialize();
     }, [initialize]);
 
+    const handleCopyKey = useCallback(() => {
+        if (accessKey) {
+            navigator.clipboard.writeText(accessKey);
+            setKeyCopied(true);
+            setTimeout(() => setKeyCopied(false), 2000);
+        }
+    }, [accessKey]);
+
     return (
         <div className="min-h-screen bg-background">
             <div className="container mx-auto px-4 py-8 max-w-4xl print:px-0 print:py-4">
@@ -37,6 +48,45 @@ export function SettingsPage() {
                 />
 
                 <div className="space-y-6">
+                    {/* Access Key Section */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <KeyRound className="size-5" />
+                                Access Key
+                            </CardTitle>
+                            <CardDescription>Your UUID access key for this account.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="space-y-2">
+                                <Label className="text-base">Current Access Key</Label>
+                                <div className="flex items-center gap-2">
+                                    <code className="flex-1 rounded bg-muted px-3 py-2 text-sm font-mono">
+                                        {accessKey}
+                                    </code>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={handleCopyKey}
+                                        className="shrink-0"
+                                    >
+                                        {keyCopied ? (
+                                            <Check className="h-4 w-4" />
+                                        ) : (
+                                            <Copy className="h-4 w-4" />
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-4 rounded-lg">
+                                <Info className="size-4 text-amber-600 dark:text-amber-400" />
+                                <p className="text-amber-900 dark:text-amber-100">
+                                    <strong>Keep this key secure!</strong> Anyone with this key can access your budget data. There is no password reset or recovery option.
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+
                     {/* General Settings */}
                     <Card>
                         <CardHeader>

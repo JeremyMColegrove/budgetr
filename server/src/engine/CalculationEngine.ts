@@ -3,33 +3,31 @@
 // ============================================================================
 // Core calculation utilities used by other engine classes
 
-import type { BudgetRule, Frequency } from '../types/index.js';
-
-// ----------------------------------------------------------------------------
-// Constants
-// ----------------------------------------------------------------------------
-
-/** Monthly multipliers for frequency normalization */
-const FREQUENCY_TO_MONTHLY: Record<Frequency, number> = {
-  weekly: 4.33,
-  'bi-weekly': 2.17,
-  monthly: 1,
-  yearly: 1 / 12,
-};
+import type { BudgetRule } from '../types/index.js';
 
 // ----------------------------------------------------------------------------
 // CalculationEngine Class
 // ----------------------------------------------------------------------------
 
 export class CalculationEngine {
+  // Frequency multipliers for monthly normalization
+  private static readonly FREQUENCY_MULTIPLIERS: Record<string, number> = {
+    weekly: 4.33,
+    'bi-weekly': 2.17,
+    monthly: 1,
+    yearly: 1 / 12,
+  };
+
   /**
-   * Normalize a rule's amount to a monthly value based on its frequency
+   * Normalize a rule amount to its monthly equivalent based on frequency
    */
   static normalizeToMonthly(rule: BudgetRule): number {
     if (!rule.isRecurring || !rule.frequency) {
-      return rule.amount; // Non-recurring = one-time, treat as monthly
+      return rule.amount;
     }
-    return rule.amount * FREQUENCY_TO_MONTHLY[rule.frequency];
+    
+    const multiplier = this.FREQUENCY_MULTIPLIERS[rule.frequency] || 1;
+    return rule.amount * multiplier;
   }
 
   /**
@@ -38,11 +36,11 @@ export class CalculationEngine {
   static calculateMonthlyNet(rules: BudgetRule[]): number {
     const income = rules
       .filter((r) => r.type === 'income')
-      .reduce((sum, r) => sum + this.normalizeToMonthly(r), 0);
+      .reduce((sum, r) => sum + r.amount, 0);
 
     const expenses = rules
       .filter((r) => r.type === 'expense')
-      .reduce((sum, r) => sum + this.normalizeToMonthly(r), 0);
+      .reduce((sum, r) => sum + r.amount, 0);
 
     return income - expenses;
   }

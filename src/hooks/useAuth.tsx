@@ -60,8 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async () => {
     const newKey = await authApi.register();
-    localStorage.setItem(ACCESS_KEY_STORAGE_KEY, newKey);
-    setAccessKey(newKey);
+    // Don't auto-authenticate - let LoginPage handle it after user acknowledges the key
     return newKey;
   }, []);
 

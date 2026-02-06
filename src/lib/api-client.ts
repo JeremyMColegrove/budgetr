@@ -155,16 +155,24 @@ export const rulesApi = {
   },
 
   async create(profileId: string, data: BudgetRuleFormData): Promise<BudgetRule> {
+    // Get current month in YYYY-MM format
+    const now = new Date();
+    const startMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
     return request<BudgetRule>(`/profiles/${profileId}/rules`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, startMonth }),
     });
   },
 
   async update(id: string, data: Partial<BudgetRuleFormData>): Promise<BudgetRule> {
+    // Get current month in YYYY-MM format for versioning
+    const now = new Date();
+    const currentViewMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
     return request<BudgetRule>(`/rules/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, currentViewMonth }),
     });
   },
 

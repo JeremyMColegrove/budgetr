@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
--- Budget rules table
+-- Budget rules table (Month-Grain Versioning)
 CREATE TABLE IF NOT EXISTS budget_rules (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -44,11 +44,14 @@ CREATE TABLE IF NOT EXISTS budget_rules (
   to_account_id TEXT,
   category TEXT NOT NULL,
   notes TEXT NOT NULL,
-  is_recurring INTEGER NOT NULL CHECK(is_recurring IN (0, 1)),
-  frequency TEXT CHECK(frequency IN ('weekly', 'bi-weekly', 'monthly', 'yearly')),
+  is_recurring INTEGER DEFAULT 0,
+  frequency TEXT,
   start_date TEXT,
+  start_month TEXT NOT NULL,
+  end_month TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  CHECK(start_month <= end_month OR end_month IS NULL),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
   FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
@@ -63,5 +66,6 @@ CREATE INDEX IF NOT EXISTS idx_budget_rules_user_id ON budget_rules(user_id);
 CREATE INDEX IF NOT EXISTS idx_budget_rules_profile_id ON budget_rules(profile_id);
 CREATE INDEX IF NOT EXISTS idx_budget_rules_account_id ON budget_rules(account_id);
 CREATE INDEX IF NOT EXISTS idx_budget_rules_to_account_id ON budget_rules(to_account_id);
+CREATE INDEX IF NOT EXISTS idx_budget_rules_month_range ON budget_rules(profile_id, start_month, end_month);
 `;
 

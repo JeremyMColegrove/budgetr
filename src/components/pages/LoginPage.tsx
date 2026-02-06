@@ -47,9 +47,23 @@ export function LoginPage() {
         try {
             const key = await register();
             setNewKey(key);
-            // Redirect will happen automatically via App.tsx
+            // Don't auto-login - user must click "Continue to Dashboard"
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Registration failed');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleContinue = async () => {
+        if (!newKey) return;
+        setIsSubmitting(true);
+
+        try {
+            await login(newKey);
+            // Redirect will happen automatically via App.tsx
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Login failed');
         } finally {
             setIsSubmitting(false);
         }
@@ -115,9 +129,13 @@ export function LoginPage() {
                                     If you lose it, you'll lose access to all your data.
                                 </p>
                             </div>
-                            <p className="text-sm text-center text-muted-foreground">
-                                You're now logged in. The dashboard will load automatically.
-                            </p>
+                            <Button
+                                onClick={handleContinue}
+                                disabled={isSubmitting}
+                                className="w-full"
+                            >
+                                {isSubmitting ? 'Loading...' : 'Continue to Dashboard'}
+                            </Button>
                         </div>
                     ) : (
                         <>

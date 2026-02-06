@@ -8,6 +8,14 @@
 import { useBudgetStore } from '@/store/budget-store';
 import type { BudgetProfile, BudgetRule } from '@/types/budget';
 
+// Helper to get current month in YYYY-MM format
+function getCurrentMonth(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+}
+
 // ----------------------------------------------------------------------------
 // Schema Version
 // ----------------------------------------------------------------------------
@@ -258,6 +266,7 @@ export const dataTransfer: DataTransferAdapter = {
                                 isRecurring: rule.isRecurring,
                                 frequency: rule.frequency,
                                 startDate: rule.startDate,
+                                startMonth: rule.startMonth || getCurrentMonth(),
                             });
                             result.rulesImported++;
                         }
@@ -331,6 +340,7 @@ export const dataTransfer: DataTransferAdapter = {
                                                 isRecurring: rule.isRecurring,
                                                 frequency: rule.frequency,
                                                 startDate: rule.startDate,
+                                                startMonth: rule.startMonth || getCurrentMonth(),
                                             });
                                             result.rulesImported++;
                                         }
@@ -376,6 +386,7 @@ export const dataTransfer: DataTransferAdapter = {
                                             isRecurring: rule.isRecurring,
                                             frequency: rule.frequency,
                                             startDate: rule.startDate,
+                                            startMonth: rule.startMonth || getCurrentMonth(),
                                         });
                                         result.rulesImported++;
                                     }
@@ -421,6 +432,7 @@ export const dataTransfer: DataTransferAdapter = {
                                     isRecurring: rule.isRecurring,
                                     frequency: rule.frequency,
                                     startDate: rule.startDate,
+                                    startMonth: rule.startMonth || getCurrentMonth(),
                                 });
                                 result.rulesImported++;
                             }

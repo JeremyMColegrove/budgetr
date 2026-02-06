@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import { db, generateId, now } from '../database/db.js';
+import { hardDeleteRule, softDeleteRule, upsertRule } from '../engine/RuleVersioning.js';
 import type { AuthRequest } from '../middleware/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 import type {
@@ -12,6 +13,7 @@ import type {
     CreateBudgetRuleRequest,
     UpdateBudgetRuleRequest,
 } from '../types/index.js';
+import { getCurrentMonth } from '../utils/date-utils.js';
 
 export const rulesRouter = Router();
 
@@ -35,6 +37,8 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
     isRecurring: row.is_recurring === 1,
     frequency: row.frequency ?? undefined,
     startDate: row.start_date ?? undefined,
+    startMonth: row.start_month,
+    endMonth: row.end_month ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -44,11 +48,19 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
 // Routes
 // ----------------------------------------------------------------------------
 
-// GET /api/profiles/:profileId/rules - List rules for profile
+// GET /api/profiles/:profileId/rules - List rules for profile (with optional month filter)
 rulesRouter.get('/profiles/:profileId/rules', (req, res) => {
   const { userId } = req as AuthRequest;
-  const rules = db.prepare('SELECT * FROM budget_rules WHERE profile_id = ? AND user_id = ? ORDER BY created_at ASC')
-    .all(req.params.profileId, userId) as BudgetRuleRow[];
+  const month = (req.query.month as string) || getCurrentMonth();
+  
+  const rules = db.prepare(
+    `SELECT * FROM budget_rules 
+     WHERE profile_id = ? 
+     AND user_id = ? 
+     AND start_month <= ? 
+     AND (end_month IS NULL OR end_month >= ?)
+     ORDER BY created_at ASC`
+  ).all(req.params.profileId, userId, month, month) as BudgetRuleRow[];
   
   res.json(rules.map(mapBudgetRuleRow));
 });
@@ -79,6 +91,7 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     isRecurring,
     frequency,
     startDate,
+    startMonth,
   } = req.body as CreateBudgetRuleRequest;
   
   // Validation
@@ -98,7 +111,11 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     return res.status(400).json({ error: 'Category is required' });
   }
   
-  if (typeof isRecurring !== 'boolean') {
+  if (!startMonth || typeof startMonth !== 'string') {
+    return res.status(400).json({ error: 'startMonth is required (YYYY-MM format)' });
+  }
+
+  if (isRecurring !== undefined && typeof isRecurring !== 'boolean') {
     return res.status(400).json({ error: 'isRecurring must be a boolean' });
   }
   
@@ -118,8 +135,8 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
   db.prepare(
     `INSERT INTO budget_rules (
       id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-      category, notes, is_recurring, frequency, start_date, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      category, notes, is_recurring, frequency, start_date, start_month, end_month, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
@@ -134,6 +151,8 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     isRecurring ? 1 : 0,
     frequency ?? null,
     startDate ?? null,
+    startMonth,
+    null, // end_month = NULL (forever)
     timestamp,
     timestamp
   );
@@ -142,113 +161,42 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
   res.status(201).json(mapBudgetRuleRow(rule));
 });
 
-// PUT /api/rules/:id - Update rule
+// PUT /api/rules/:id - Update rule (with versioning)
 rulesRouter.put('/rules/:id', (req, res) => {
   const { userId } = req as AuthRequest;
-  const data = req.body as UpdateBudgetRuleRequest;
+  const { currentViewMonth, ...updates } = req.body as UpdateBudgetRuleRequest;
   
-  const updates: string[] = [];
-  const values: (string | number | null)[] = [];
-
-  if (data.label !== undefined) {
-    if (typeof data.label !== 'string' || data.label.trim().length === 0) {
-      return res.status(400).json({ error: 'Label must be a non-empty string' });
+  if (!currentViewMonth) {
+    return res.status(400).json({ error: 'currentViewMonth is required for versioning' });
+  }
+  
+  try {
+    const updatedRule = upsertRule(req.params.id, updates, currentViewMonth, userId);
+    res.json(updatedRule);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Rule not found') {
+      return res.status(404).json({ error: 'Rule not found' });
     }
-    updates.push('label = ?');
-    values.push(data.label.trim());
+    throw error;
   }
-
-  if (data.amount !== undefined) {
-    if (typeof data.amount !== 'number' || data.amount < 0) {
-      return res.status(400).json({ error: 'Amount must be a non-negative number' });
-    }
-    updates.push('amount = ?');
-    values.push(data.amount);
-  }
-
-  if (data.type !== undefined) {
-    if (!['income', 'expense'].includes(data.type)) {
-      return res.status(400).json({ error: 'Type must be either "income" or "expense"' });
-    }
-    updates.push('type = ?');
-    values.push(data.type);
-  }
-
-  if (data.accountId !== undefined) {
-    updates.push('account_id = ?');
-    values.push(data.accountId ?? null);
-  }
-
-  if (data.toAccountId !== undefined) {
-    updates.push('to_account_id = ?');
-    values.push(data.toAccountId ?? null);
-  }
-
-  if (data.category !== undefined) {
-    if (typeof data.category !== 'string' || data.category.trim().length === 0) {
-      return res.status(400).json({ error: 'Category must be a non-empty string' });
-    }
-    updates.push('category = ?');
-    values.push(data.category.trim());
-  }
-
-  if (data.notes !== undefined) {
-    updates.push('notes = ?');
-    values.push(data.notes ?? '');
-  }
-
-  if (data.isRecurring !== undefined) {
-    if (typeof data.isRecurring !== 'boolean') {
-      return res.status(400).json({ error: 'isRecurring must be a boolean' });
-    }
-    updates.push('is_recurring = ?');
-    values.push(data.isRecurring ? 1 : 0);
-  }
-
-  if (data.frequency !== undefined) {
-    if (data.frequency && !['weekly', 'bi-weekly', 'monthly', 'yearly'].includes(data.frequency)) {
-      return res.status(400).json({ error: 'Invalid frequency' });
-    }
-    updates.push('frequency = ?');
-    values.push(data.frequency ?? null);
-  }
-
-  if (data.startDate !== undefined) {
-    updates.push('start_date = ?');
-    values.push(data.startDate ?? null);
-  }
-
-  if (updates.length === 0) {
-    return res.status(400).json({ error: 'No valid fields to update' });
-  }
-
-  // Always update the updated_at timestamp
-  updates.push('updated_at = ?');
-  values.push(now());
-
-  values.push(req.params.id);
-  values.push(userId);
-
-  const result = db.prepare(
-    `UPDATE budget_rules SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`
-  ).run(...values);
-
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'Rule not found' });
-  }
-
-  const rule = db.prepare('SELECT * FROM budget_rules WHERE id = ?').get(req.params.id) as BudgetRuleRow;
-  res.json(mapBudgetRuleRow(rule));
 });
 
-// DELETE /api/rules/:id - Delete rule
+// DELETE /api/rules/:id - Delete rule (soft delete with optional month, hard delete if no month)
 rulesRouter.delete('/rules/:id', (req, res) => {
   const { userId } = req as AuthRequest;
-  const result = db.prepare('DELETE FROM budget_rules WHERE id = ? AND user_id = ?').run(req.params.id, userId);
-
-  if (result.changes === 0) {
+  const currentViewMonth = req.query.month as string | undefined;
+  
+  try {
+    if (currentViewMonth) {
+      // Soft delete: set end_month to previous month
+      softDeleteRule(req.params.id, currentViewMonth, userId);
+    } else {
+      // Hard delete: remove completely
+      hardDeleteRule(req.params.id, userId);
+    }
+    
+    res.status(204).send();
+  } catch (error) {
     return res.status(404).json({ error: 'Rule not found' });
   }
-
-  res.status(204).send();
 });

@@ -34,13 +34,12 @@ export function initializeDatabase(): void {
   console.log('✓ Database initialized');
 }
 
-// Migration: Add default user for existing data
+// Migration: Add default user for existing data and migrate to month-grain schema
 function migrateExistingData(): void {
-  // Check if users table is empty
+  // Migration 1: Add default user for existing data
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
   
   if (userCount.count === 0) {
-    // Check if there's existing data that needs migration
     const profileCount = db.prepare('SELECT COUNT(*) as count FROM profiles').get() as { count: number };
     
     if (profileCount.count > 0) {
@@ -49,19 +48,14 @@ function migrateExistingData(): void {
       const defaultUserId = generateId();
       const timestamp = now();
       
-      // Create default user
       db.prepare('INSERT INTO users (id, created_at) VALUES (?, ?)').run(defaultUserId, timestamp);
-      
-      // Update all existing profiles, accounts, and rules with the default user_id
-      // Note: SQLite doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS in a clean way
-      // The schema already defines these columns, so we just need to update NULL values
       
       try {
         db.prepare('UPDATE profiles SET user_id = ? WHERE user_id IS NULL OR user_id = ""').run(defaultUserId);
         db.prepare('UPDATE accounts SET user_id = ? WHERE user_id IS NULL OR user_id = ""').run(defaultUserId);
         db.prepare('UPDATE budget_rules SET user_id = ? WHERE user_id IS NULL OR user_id = ""').run(defaultUserId);
         
-        console.log('✓ Migration complete');
+        console.log('✓ Authentication migration complete');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('⚠  IMPORTANT: Default Access Key Generated');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -69,10 +63,115 @@ function migrateExistingData(): void {
         console.log('   Save this key - it\'s your only way to access existing data!');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       } catch (error) {
-        // If columns don't exist yet (fresh install), this is fine
         console.log('✓ Fresh installation - no migration needed');
       }
     }
+  }
+  
+  // Migration 2: Migrate to month-grain schema
+  migrateToMonthGrainSchema();
+}
+
+// Migration: Convert old frequency-based rules to month-grain versioning
+function migrateToMonthGrainSchema(): void {
+  try {
+    // If start_month doesn't exist, we need to migrate
+    const checkQuery = db.prepare(`
+      SELECT sql FROM sqlite_master 
+      WHERE type='table' AND name='budget_rules'
+    `);
+    const tableInfo = checkQuery.get() as { sql: string } | undefined;
+    
+    if (!tableInfo) {
+      // Table doesn't exist yet, will be created by schema
+      return;
+    }
+
+    const hasStartMonth = tableInfo.sql.includes('start_month');
+    const hasFrequency = tableInfo.sql.includes('frequency');
+
+    if (hasStartMonth && hasFrequency) {
+      // Already migrated and has frequency columns
+      return;
+    }
+
+    // Need to migrate
+    console.log('⚠ Migrating budget rules to month-grain schema...');
+
+    const currentMonth = '2026-02'; // Current month for migration
+
+    // Create new table with correct schema (including frequency columns)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS budget_rules_new (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+        account_id TEXT,
+        to_account_id TEXT,
+        category TEXT NOT NULL,
+        notes TEXT NOT NULL,
+        is_recurring INTEGER DEFAULT 0,
+        frequency TEXT,
+        start_date TEXT,
+        start_month TEXT NOT NULL,
+        end_month TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK(start_month <= end_month OR end_month IS NULL),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+        FOREIGN KEY (to_account_id) REFERENCES accounts(id) ON DELETE SET NULL
+      )
+    `);
+
+    // Check if source table has frequency columns
+    const sourceHasFrequency = tableInfo.sql.includes('frequency');
+
+    if (sourceHasFrequency) {
+      // Copy data keeping frequency info
+      db.exec(`
+        INSERT INTO budget_rules_new (
+          id, user_id, profile_id, label, amount, type, account_id, to_account_id,
+          category, notes, is_recurring, frequency, start_date, start_month, end_month, created_at, updated_at
+        )
+        SELECT 
+          id, user_id, profile_id, label, amount, type, account_id, to_account_id,
+          category, notes, is_recurring, frequency, start_date, '${currentMonth}', NULL, created_at, updated_at
+        FROM budget_rules
+      `);
+    } else {
+      // Source table lost frequency info (from previous bad migration), set defaults
+      db.exec(`
+        INSERT INTO budget_rules_new (
+          id, user_id, profile_id, label, amount, type, account_id, to_account_id,
+          category, notes, is_recurring, frequency, start_date, start_month, end_month, created_at, updated_at
+        )
+        SELECT 
+          id, user_id, profile_id, label, amount, type, account_id, to_account_id,
+          category, notes, 0, NULL, NULL, '${currentMonth}', NULL, created_at, updated_at
+        FROM budget_rules
+      `);
+    }
+
+    // Drop old table and rename new table
+    db.exec('DROP TABLE budget_rules');
+    db.exec('ALTER TABLE budget_rules_new RENAME TO budget_rules');
+
+    // Recreate indexes
+    db.exec('CREATE INDEX IF NOT EXISTS idx_budget_rules_profile ON budget_rules(profile_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_budget_rules_user ON budget_rules(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_budget_rules_month_range ON budget_rules(profile_id, start_month, end_month)');
+
+    console.log('✓ Month-grain schema migration complete');
+    console.log(`   All existing rules set to start in ${currentMonth} with no end date`);
+
+  } catch (error) {
+    console.error('Migration error:', error);
+    throw error;
   }
 }
 

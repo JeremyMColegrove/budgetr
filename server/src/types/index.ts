@@ -41,6 +41,8 @@ export interface BudgetRule {
   isRecurring: boolean;
   frequency?: Frequency;
   startDate?: string;
+  startMonth: string; // ISO "YYYY-MM" - for versioning
+  endMonth?: string; // ISO "YYYY-MM", undefined = forever - for versioning
   createdAt: string;
   updatedAt: string;
 }
@@ -95,6 +97,8 @@ export interface BudgetRuleRow {
   is_recurring: number;
   frequency: Frequency | null;
   start_date: string | null;
+  start_month: string; // ISO "YYYY-MM" - for versioning
+  end_month: string | null; // ISO "YYYY-MM", null = forever - for versioning
   created_at: string;
   updated_at: string;
 }
@@ -150,6 +154,7 @@ export interface CreateBudgetRuleRequest {
   isRecurring: boolean;
   frequency?: Frequency;
   startDate?: string;
+  startMonth: string; // ISO "YYYY-MM" - added by frontend
 }
 
 export interface UpdateBudgetRuleRequest {
@@ -163,4 +168,5 @@ export interface UpdateBudgetRuleRequest {
   isRecurring?: boolean;
   frequency?: Frequency;
   startDate?: string;
+  currentViewMonth: string; // Required for versioning logic - added by frontend
 }
