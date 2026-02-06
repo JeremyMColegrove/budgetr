@@ -8,6 +8,8 @@ import { initializeDatabase } from './database/db.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { accountsRouter } from './routes/accounts.js';
 import { authRouter } from './routes/auth.js';
+import { categoriesRouter } from './routes/categories.js';
+import { ledgerRouter } from './routes/ledger.js';
 import { profilesRouter } from './routes/profiles.js';
 import { rulesRouter } from './routes/rules.js';
 
@@ -49,6 +51,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api', accountsRouter);
 app.use('/api', rulesRouter);
+app.use('/api', categoriesRouter);
+app.use('/api', ledgerRouter);
 
 // ----------------------------------------------------------------------------
 // Error Handling

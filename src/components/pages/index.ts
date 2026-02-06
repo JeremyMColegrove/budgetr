@@ -5,4 +5,4 @@
 export { AccountsPage } from './AccountsPage';
 export { LoginPage } from './LoginPage';
 export { SettingsPage } from './SettingsPage';
-
+export { TrackingPage } from './TrackingPage';

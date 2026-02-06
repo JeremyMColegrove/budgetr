@@ -43,6 +43,7 @@ export interface BudgetRule {
   startDate?: string;
   startMonth: string; // ISO "YYYY-MM" - for versioning
   endMonth?: string; // ISO "YYYY-MM", undefined = forever - for versioning
+  isDefaultPaid?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +55,27 @@ export interface BudgetProfile {
   rules: BudgetRule[];
   createdAt: string;
   updatedAt: string;
+}
+
+export type CategoryKind = 'bill' | 'spending';
+
+export interface Category {
+  id: string;
+  name: string;
+  kind: CategoryKind;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LedgerEntry {
+  id: string;
+  profileId: string;
+  monthIso: string;
+  ruleId: string;
+  amount: number;
+  date: string;
+  notes: string;
+  createdAt: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -99,8 +121,30 @@ export interface BudgetRuleRow {
   start_date: string | null;
   start_month: string; // ISO "YYYY-MM" - for versioning
   end_month: string | null; // ISO "YYYY-MM", null = forever - for versioning
+  is_default_paid: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface CategoryRow {
+  id: string;
+  user_id: string;
+  name: string;
+  kind: CategoryKind;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LedgerEntryRow {
+  id: string;
+  user_id: string;
+  profile_id: string;
+  month_iso: string;
+  rule_id: string;
+  amount: number;
+  date: string;
+  notes: string;
+  created_at: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -155,6 +199,7 @@ export interface CreateBudgetRuleRequest {
   frequency?: Frequency;
   startDate?: string;
   startMonth: string; // ISO "YYYY-MM" - added by frontend
+  isDefaultPaid?: boolean;
 }
 
 export interface UpdateBudgetRuleRequest {
@@ -169,4 +214,5 @@ export interface UpdateBudgetRuleRequest {
   frequency?: Frequency;
   startDate?: string;
   currentViewMonth: string; // Required for versioning logic - added by frontend
+  isDefaultPaid?: boolean;
 }

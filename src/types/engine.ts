@@ -39,6 +39,40 @@ export interface RuleSummary {
   expenseRules: BudgetRule[];
 }
 
+/** Summary for a specific month (income, planned, actual) */
+export interface MonthSummary {
+  totalIncome: number;
+  totalPlannedExpense: number;
+  totalActualExpense: number;
+}
+
+/** UI-ready monthly state (rules + ledger) */
+export interface MonthlyState {
+  monthIso: string;
+  summary: {
+    income: number;
+    totalPlannedExpenses: number;
+    totalActualSpent: number;
+    safeToSpend: number;
+  };
+  bills: Array<{
+    ruleId: string;
+    label: string;
+    planned: number;
+    actual: number | null;
+    isPaid: boolean;
+    dueDate?: number;
+  }>;
+  spending: Array<{
+    ruleId: string;
+    label: string;
+    planned: number;
+    spent: number;
+    remaining: number;
+    transactionCount: number;
+  }>;
+}
+
 /** Net worth analysis with current and projected values */
 export interface NetWorthAnalysis {
   // Current values

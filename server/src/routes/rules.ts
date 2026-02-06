@@ -39,6 +39,7 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
     startDate: row.start_date ?? undefined,
     startMonth: row.start_month,
     endMonth: row.end_month ?? undefined,
+    isDefaultPaid: row.is_default_paid === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -70,8 +71,22 @@ rulesRouter.get('/profiles/:profileId/rules/summary', async (req, res) => {
   try {
     const { RuleManager } = await import('../engine/RuleManager.js');
     const ruleManager = new RuleManager(req.params.profileId);
-    const summary = ruleManager.getSummary();
+    const month = (req.query.month as string) || getCurrentMonth();
+    const summary = ruleManager.getMonthSummary(month);
     res.json(summary);
+  } catch (error) {
+    throw error;
+  }
+});
+
+// GET /api/profiles/:profileId/rules/monthly-state - UI-ready monthly state
+rulesRouter.get('/profiles/:profileId/rules/monthly-state', async (req, res) => {
+  try {
+    const { getMonthlyState } = await import('../engine/monthly-state.js');
+    const { userId } = req as AuthRequest;
+    const month = (req.query.month as string) || getCurrentMonth();
+    const state = getMonthlyState(req.params.profileId, month, userId);
+    res.json(state);
   } catch (error) {
     throw error;
   }
@@ -92,6 +107,7 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     frequency,
     startDate,
     startMonth,
+    isDefaultPaid,
   } = req.body as CreateBudgetRuleRequest;
   
   // Validation
@@ -135,8 +151,8 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
   db.prepare(
     `INSERT INTO budget_rules (
       id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-      category, notes, is_recurring, frequency, start_date, start_month, end_month, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      category, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
@@ -153,6 +169,7 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     startDate ?? null,
     startMonth,
     null, // end_month = NULL (forever)
+    isDefaultPaid ? 1 : 0,
     timestamp,
     timestamp
   );

@@ -69,6 +69,7 @@ export interface BudgetRule {
   startDate?: string; // ISO date string
   startMonth: string; // ISO "YYYY-MM" - for versioning (backend only)
   endMonth?: string; // ISO "YYYY-MM" - for versioning (backend only)
+  isDefaultPaid?: boolean;
   createdAt: string;
   updatedAt: string;
 }

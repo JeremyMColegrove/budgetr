@@ -5,7 +5,6 @@
 // ============================================================================
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import { useState } from 'react';
 import { AppSidebar, type PageId } from './AppSidebar';
 
 // ----------------------------------------------------------------------------
@@ -13,6 +12,8 @@ import { AppSidebar, type PageId } from './AppSidebar';
 // ----------------------------------------------------------------------------
 
 interface SidebarLayoutProps {
+    activePage: PageId;
+    onNavigate: (page: PageId) => void;
     children: (activePage: PageId) => React.ReactNode;
 }
 
@@ -20,12 +21,10 @@ interface SidebarLayoutProps {
 // Component
 // ----------------------------------------------------------------------------
 
-export function SidebarLayout({ children }: SidebarLayoutProps) {
-    const [activePage, setActivePage] = useState<PageId>('budget');
-
+export function SidebarLayout({ activePage, onNavigate, children }: SidebarLayoutProps) {
     return (
         <SidebarProvider>
-            <AppSidebar activePage={activePage} onNavigate={setActivePage} />
+            <AppSidebar activePage={activePage} onNavigate={onNavigate} />
             <SidebarInset>
                 <header className="sticky top-0 z-10 flex h-12 items-center gap-2 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-4 print:hidden">
                     <SidebarTrigger className="-ml-2" />

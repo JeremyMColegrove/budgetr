@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { categoriesApi } from '@/lib/api-client';
 import { useBudgetStore } from '@/store/budget-store';
 import type { BudgetRule, BudgetRuleFormData, Frequency, TransactionType } from '@/types/budget';
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '@/types/budget';
@@ -58,10 +59,14 @@ export function TransactionRuleForm({
     const [accountId, setAccountId] = useState('');
     const [toAccountId, setToAccountId] = useState('');
     const [category, setCategory] = useState('');
+    const [categoryKind, setCategoryKind] = useState<'bill' | 'spending'>('spending');
+    const [expenseCategories, setExpenseCategories] = useState<string[]>([...DEFAULT_EXPENSE_CATEGORIES]);
+    const [expenseCategoryKinds, setExpenseCategoryKinds] = useState<Record<string, 'bill' | 'spending'>>({});
     const [notes, setNotes] = useState('');
     const [isRecurring, setIsRecurring] = useState(true);
     const [frequency, setFrequency] = useState<Frequency>('monthly');
     const [startDate, setStartDate] = useState('');
+    const [isDefaultPaid, setIsDefaultPaid] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Reset form when dialog opens/closes or editing rule changes
@@ -73,10 +78,12 @@ export function TransactionRuleForm({
             setAccountId(editingRule.accountId ?? '');
             setToAccountId(editingRule.toAccountId ?? '');
             setCategory(editingRule.category);
+            setCategoryKind(expenseCategoryKinds[editingRule.category] ?? 'spending');
             setNotes(editingRule.notes);
             setIsRecurring(editingRule.isRecurring);
             setFrequency(editingRule.frequency ?? 'monthly');
             setStartDate(editingRule.startDate ?? '');
+            setIsDefaultPaid(editingRule.isDefaultPaid ?? false);
         } else if (open) {
             // Reset for new rule
             setLabel('');
@@ -85,14 +92,45 @@ export function TransactionRuleForm({
             setAccountId('');
             setToAccountId('');
             setCategory('');
+            setCategoryKind('spending');
             setNotes('');
             setIsRecurring(true);
             setFrequency('monthly');
             setStartDate('');
+            setIsDefaultPaid(false);
         }
-    }, [open, editingRule]);
+    }, [open, editingRule, expenseCategoryKinds]);
 
-    const categories = type === 'income' ? DEFAULT_INCOME_CATEGORIES : DEFAULT_EXPENSE_CATEGORIES;
+    useEffect(() => {
+        const loadCategories = async () => {
+            try {
+                const data = await categoriesApi.list();
+                const kinds: Record<string, 'bill' | 'spending'> = {};
+                data.forEach((item) => {
+                    kinds[item.name] = item.kind;
+                });
+                const merged = Array.from(new Set([...data.map((item) => item.name), ...DEFAULT_EXPENSE_CATEGORIES]));
+                setExpenseCategories(merged);
+                setExpenseCategoryKinds(kinds);
+            } catch (error) {
+                console.error('Failed to load categories:', error);
+                setExpenseCategories([...DEFAULT_EXPENSE_CATEGORIES]);
+                setExpenseCategoryKinds({});
+            }
+        };
+
+        if (open) {
+            loadCategories();
+        }
+    }, [open]);
+
+    useEffect(() => {
+        if (type !== 'expense') return;
+        if (!category) return;
+        setCategoryKind(expenseCategoryKinds[category] ?? 'spending');
+    }, [category, expenseCategoryKinds, type]);
+
+    const categories = type === 'income' ? DEFAULT_INCOME_CATEGORIES : expenseCategories;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -111,9 +149,14 @@ export function TransactionRuleForm({
             isRecurring,
             frequency: isRecurring ? frequency : undefined,
             startDate: isRecurring && startDate ? startDate : undefined,
+            isDefaultPaid: type === 'expense' ? isDefaultPaid : undefined,
+            startMonth: editingRule?.startMonth ?? new Date().toISOString().slice(0, 7),
         };
 
         try {
+            if (type === 'expense' && category) {
+                await categoriesApi.upsert(category, categoryKind);
+            }
             if (editingRule) {
                 await updateRule(editingRule.id, formData);
             } else {
@@ -139,14 +182,14 @@ export function TransactionRuleForm({
                     </DialogDescription>
                 </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-3">
                     {/* Type Toggle */}
                     <div className="flex gap-2">
                         <Button
                             type="button"
                             variant={type === 'income' ? 'default' : 'outline'}
                             size="sm"
-                            className="flex-1"
+                            className="flex-1 h-8"
                             onClick={() => {
                                 setType('income');
                                 setCategory('');
@@ -158,7 +201,7 @@ export function TransactionRuleForm({
                             type="button"
                             variant={type === 'expense' ? 'default' : 'outline'}
                             size="sm"
-                            className="flex-1"
+                            className="flex-1 h-8"
                             onClick={() => {
                                 setType('expense');
                                 setCategory('');
@@ -168,121 +211,165 @@ export function TransactionRuleForm({
                         </Button>
                     </div>
 
-                    {/* Label */}
-                    <div className="space-y-1.5">
-                        <Label htmlFor="label">Label</Label>
-                        <Input
-                            id="label"
-                            placeholder="e.g., Rent, Groceries, Paycheck"
-                            value={label}
-                            onChange={(e) => setLabel(e.target.value)}
-                            required
-                        />
+                    <div className="grid grid-cols-2 gap-3">
+                        {/* Label */}
+                        <div className="space-y-1">
+                            <Label htmlFor="label" className="text-xs">Label</Label>
+                            <Input
+                                id="label"
+                                className="h-8"
+                                placeholder="e.g., Rent"
+                                value={label}
+                                onChange={(e) => setLabel(e.target.value)}
+                                required
+                            />
+                        </div>
+
+                        {/* Amount */}
+                        <div className="space-y-1">
+                            <Label htmlFor="amount" className="text-xs">Amount</Label>
+                            <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                                <Input
+                                    id="amount"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    className="h-8 pl-6"
+                                    placeholder="0.00"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    required
+                                />
+                            </div>
+                        </div>
                     </div>
 
-                    {/* Amount */}
-                    <div className="space-y-1.5">
-                        <Label htmlFor="amount">Amount</Label>
-                        <Input
-                            id="amount"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder="0.00"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            required
-                        />
-                    </div>
-
-                    {/* Category */}
-                    <div className="space-y-1.5">
-                        <Label htmlFor="category">Category</Label>
-                        <Select value={category} onValueChange={setCategory} required>
-                            <SelectTrigger id="category">
-                                <SelectValue placeholder="Select a category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {categories.map((cat) => (
-                                    <SelectItem key={cat} value={cat}>
-                                        {cat}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    {/* Account - Smart Pay From / Deposit To */}
-                    {accounts.length > 0 && (
-                        <div className="space-y-1.5">
-                            <Label htmlFor="account">
-                                {type === 'expense' ? 'Pay From Account' : 'Deposit To Account'}
-                            </Label>
-                            <Select value={accountId || 'none'} onValueChange={(v) => setAccountId(v === 'none' ? '' : v)}>
-                                <SelectTrigger id="account">
-                                    <SelectValue placeholder="Select an account (optional)" />
+                    <div className="grid grid-cols-2 gap-3">
+                        {/* Category */}
+                        <div className="space-y-1">
+                            <Label htmlFor="category" className="text-xs">Category</Label>
+                            <Select value={category} onValueChange={setCategory} required>
+                                <SelectTrigger id="category" className="h-8">
+                                    <SelectValue placeholder="Select..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="none">No account link</SelectItem>
-                                    {accounts.map((account) => (
-                                        <SelectItem key={account.id} value={account.id}>
-                                            {account.name}
+                                    {categories.map((cat) => (
+                                        <SelectItem key={cat} value={cat}>
+                                            {cat}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">
-                                {type === 'expense'
-                                    ? 'Optional: The account this expense is paid from.'
-                                    : 'Optional: The account this income is deposited to.'}
-                            </p>
                         </div>
-                    )}
 
-                    {/* Pay To Account (for loan payments) - expenses only */}
-                    {type === 'expense' && accounts.length > 0 && (
-                        <div className="space-y-1.5">
-                            <Label htmlFor="toAccount">Transfer To Account</Label>
-                            <Select value={toAccountId || 'none'} onValueChange={(v) => setToAccountId(v === 'none' ? '' : v)}>
-                                <SelectTrigger id="toAccount">
-                                    <SelectValue placeholder="Select destination account (optional)" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="none">No transfer</SelectItem>
-                                    {accounts
-                                        .filter((a) => a.id !== accountId) // Exclude source account
-                                        .map((account) => (
+                        {/* Category Kind (Expense Only) */}
+                        {type === 'expense' && (
+                            <div className="space-y-1">
+                                <Label className="text-xs">Type</Label>
+                                <div className="flex h-8 items-center rounded-md border p-1 bg-muted/20">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCategoryKind('bill')}
+                                        className={`flex-1 rounded-sm text-xs font-medium transition-all ${categoryKind === 'bill'
+                                            ? 'bg-background text-foreground shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                            }`}
+                                    >
+                                        Fixed
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCategoryKind('spending')}
+                                        className={`flex-1 rounded-sm text-xs font-medium transition-all ${categoryKind === 'spending'
+                                            ? 'bg-background text-foreground shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                            }`}
+                                    >
+                                        Variable
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Account Links */}
+                    {accounts.length > 0 && (
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <Label htmlFor="account" className="text-xs">
+                                    {type === 'expense' ? 'Pay From' : 'Deposit To'}
+                                </Label>
+                                <Select value={accountId || 'none'} onValueChange={(v) => setAccountId(v === 'none' ? '' : v)}>
+                                    <SelectTrigger id="account" className="h-8">
+                                        <SelectValue placeholder="Optional" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">None</SelectItem>
+                                        {accounts.map((account) => (
                                             <SelectItem key={account.id} value={account.id}>
                                                 {account.name}
                                             </SelectItem>
                                         ))}
-                                </SelectContent>
-                            </Select>
-                            <p className="text-xs text-muted-foreground">
-                                For transfers/payments: moves money to another account (savings, loan, etc.)
-                            </p>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {type === 'expense' && (
+                                <div className="space-y-1">
+                                    <Label htmlFor="toAccount" className="text-xs">Transfer To</Label>
+                                    <Select value={toAccountId || 'none'} onValueChange={(v) => setToAccountId(v === 'none' ? '' : v)}>
+                                        <SelectTrigger id="toAccount" className="h-8">
+                                            <SelectValue placeholder="Optional" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">None</SelectItem>
+                                            {accounts
+                                                .filter((a) => a.id !== accountId)
+                                                .map((account) => (
+                                                    <SelectItem key={account.id} value={account.id}>
+                                                        {account.name}
+                                                    </SelectItem>
+                                                ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
                         </div>
                     )}
 
-                    {/* Is Recurring */}
-                    <div className="flex items-center justify-between">
-                        <Label htmlFor="recurring" className="cursor-pointer">
-                            Recurring
-                        </Label>
-                        <Switch
-                            id="recurring"
-                            checked={isRecurring}
-                            onCheckedChange={setIsRecurring}
-                        />
+                    {/* Options Row */}
+                    <div className="flex items-center justify-between gap-4 py-1">
+                        <div className="flex items-center gap-2">
+                            <Switch
+                                id="recurring"
+                                checked={isRecurring}
+                                onCheckedChange={setIsRecurring}
+                                className="scale-75"
+                            />
+                            <Label htmlFor="recurring" className="text-sm cursor-pointer">Recurring</Label>
+                        </div>
+
+                        {type === 'expense' && (
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="defaultPaid"
+                                    checked={isDefaultPaid}
+                                    onCheckedChange={setIsDefaultPaid}
+                                    className="scale-75"
+                                />
+                                <Label htmlFor="defaultPaid" className="text-sm cursor-pointer">Default Paid</Label>
+                            </div>
+                        )}
                     </div>
 
                     {/* Recurring Options */}
                     {isRecurring && (
-                        <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-                            <div className="space-y-1.5">
-                                <Label htmlFor="frequency">Frequency</Label>
+                        <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/30 p-2">
+                            <div className="space-y-1">
+                                <Label htmlFor="frequency" className="text-xs">Frequency</Label>
                                 <Select value={frequency} onValueChange={(v) => setFrequency(v as Frequency)}>
-                                    <SelectTrigger id="frequency">
+                                    <SelectTrigger id="frequency" className="h-8">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -295,11 +382,12 @@ export function TransactionRuleForm({
                                 </Select>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <Label htmlFor="startDate">Start Date (optional)</Label>
+                            <div className="space-y-1">
+                                <Label htmlFor="startDate" className="text-xs">Start Date</Label>
                                 <Input
                                     id="startDate"
                                     type="date"
+                                    className="h-8"
                                     value={startDate}
                                     onChange={(e) => setStartDate(e.target.value)}
                                 />
@@ -308,23 +396,23 @@ export function TransactionRuleForm({
                     )}
 
                     {/* Notes */}
-                    <div className="space-y-1.5">
-                        <Label htmlFor="notes">Notes (optional)</Label>
+                    <div className="space-y-1">
+                        <Label htmlFor="notes" className="text-xs">Notes</Label>
                         <Textarea
                             id="notes"
-                            placeholder="Additional details..."
+                            placeholder="Optional notes..."
+                            className="min-h-[60px] resize-none"
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
-                            rows={2}
                         />
                     </div>
 
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    <DialogFooter className="pt-2">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
                             Cancel
                         </Button>
-                        <Button type="submit" disabled={isSubmitting}>
-                            {isSubmitting ? 'Saving...' : editingRule ? 'Update' : 'Add Rule'}
+                        <Button type="submit" size="sm" disabled={isSubmitting}>
+                            {isSubmitting ? 'Saving...' : editingRule ? 'Update Rule' : 'Add Rule'}
                         </Button>
                     </DialogFooter>
                 </form>

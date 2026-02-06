@@ -26,6 +26,7 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
     startDate: row.start_date ?? undefined,
     startMonth: row.start_month,
     endMonth: row.end_month ?? undefined,
+    isDefaultPaid: row.is_default_paid === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -141,6 +142,11 @@ function updateRuleInPlace(
     values.push(updates.startDate ?? null);
   }
 
+  if (updates.isDefaultPaid !== undefined) {
+    updateFields.push('is_default_paid = ?');
+    values.push(updates.isDefaultPaid ? 1 : 0);
+  }
+
   // Always update the updated_at timestamp
   updateFields.push('updated_at = ?');
   values.push(now());
@@ -187,8 +193,8 @@ function splitRule(
   db.prepare(
     `INSERT INTO budget_rules (
       id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-      category, notes, is_recurring, frequency, start_date, start_month, end_month, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      category, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     newRuleId,
     userId,
@@ -205,6 +211,7 @@ function splitRule(
     updates.startDate !== undefined ? (updates.startDate ?? null) : (existingRule.startDate ?? null),
     currentViewMonth,
     null, // end_month = NULL (forever)
+    updates.isDefaultPaid !== undefined ? (updates.isDefaultPaid ? 1 : 0) : (existingRule.isDefaultPaid ? 1 : 0),
     timestamp,
     timestamp
   );

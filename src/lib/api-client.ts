@@ -9,6 +9,7 @@ import type {
     BudgetRule,
     BudgetRuleFormData,
 } from '@/types/budget';
+import type { MonthlyState } from '@/types/engine';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -182,7 +183,77 @@ export const rulesApi = {
     });
   },
 
-  async getSummary(profileId: string): Promise<import('@/types/engine').RuleSummary> {
-    return request(`/profiles/${profileId}/rules/summary`);
+  async getSummary(
+    profileId: string,
+    month?: string
+  ): Promise<import('@/types/engine').MonthSummary> {
+    const params = new URLSearchParams();
+    if (month) {
+      params.append('month', month);
+    }
+    const query = params.toString();
+    return request(`/profiles/${profileId}/rules/summary${query ? `?${query}` : ''}`);
+  },
+
+  async getMonthlyState(profileId: string, month?: string): Promise<MonthlyState> {
+    const params = new URLSearchParams();
+    if (month) {
+      params.append('month', month);
+    }
+    const query = params.toString();
+    return request(`/profiles/${profileId}/rules/monthly-state${query ? `?${query}` : ''}`);
+  },
+};
+
+// ----------------------------------------------------------------------------
+// Categories API
+// ----------------------------------------------------------------------------
+
+export const categoriesApi = {
+  async list(): Promise<Array<{ id: string; name: string; kind: 'bill' | 'spending' }>> {
+    return request('/categories');
+  },
+
+  async upsert(name: string, kind: 'bill' | 'spending'): Promise<{ id: string; name: string; kind: 'bill' | 'spending' }> {
+    return request('/categories', {
+      method: 'POST',
+      body: JSON.stringify({ name, kind }),
+    });
+  },
+};
+
+// ----------------------------------------------------------------------------
+// Ledger API
+// ----------------------------------------------------------------------------
+
+export const ledgerApi = {
+  async markBillPaid(profileId: string, payload: { ruleId: string; monthIso: string; amount?: number; date?: string; notes?: string }) {
+    return request(`/profiles/${profileId}/ledger/mark-paid`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async unmarkBillPaid(profileId: string, payload: { ruleId: string; monthIso: string }) {
+    return request(`/profiles/${profileId}/ledger/mark-paid`, {
+      method: 'DELETE',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async addTransaction(profileId: string, payload: { ruleId: string; monthIso: string; amount: number; date: string; notes?: string }) {
+    return request(`/profiles/${profileId}/ledger/transactions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async list(profileId: string, monthIso: string) {
+    const params = new URLSearchParams({ month: monthIso });
+    return request(`/profiles/${profileId}/ledger?${params.toString()}`);
+  },
+
+  async deleteEntry(id: string) {
+    return request(`/ledger/${id}`, { method: 'DELETE' });
   },
 };

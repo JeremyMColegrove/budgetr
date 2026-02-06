@@ -17,13 +17,13 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/hooks/useAuth';
-import { LayoutDashboard, LogOut, Settings, Wallet } from 'lucide-react';
+import { CalendarClock, LayoutDashboard, LogOut, Settings, Wallet } from 'lucide-react';
 
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
 
-export type PageId = 'budget' | 'accounts' | 'data' | 'settings';
+export type PageId = 'budget' | 'tracking' | 'accounts' | 'data' | 'settings';
 
 interface NavItem {
     id: PageId;
@@ -42,6 +42,7 @@ interface AppSidebarProps {
 
 const NAV_ITEMS: NavItem[] = [
     { id: 'budget', label: 'Budget', icon: LayoutDashboard },
+    { id: 'tracking', label: 'Tracking', icon: CalendarClock },
     { id: 'accounts', label: 'Accounts', icon: Wallet },
     { id: 'settings', label: 'Settings', icon: Settings },
 ];

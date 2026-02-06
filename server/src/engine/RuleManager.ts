@@ -4,7 +4,7 @@
 // Manages budget rules and their calculations
 
 import { db } from '../database/db.js';
-import type { RuleSummary } from '../types/engine.js';
+import type { MonthSummary, RuleSummary } from '../types/engine.js';
 import type { BudgetRule, BudgetRuleRow } from '../types/index.js';
 import { getCurrentMonth } from '../utils/date-utils.js';
 import { CalculationEngine } from './CalculationEngine.js';
@@ -97,20 +97,14 @@ export class RuleManager {
    * Calculate total monthly income
    */
   getTotalIncome(): number {
-    return this.getIncomeRules().reduce(
-      (sum, r) => sum + CalculationEngine.normalizeToMonthly(r),
-      0
-    );
+    return this.sumRulesByType(this.getRules(), 'income');
   }
 
   /**
    * Calculate total monthly expenses
    */
   getTotalExpenses(): number {
-    return this.getExpenseRules().reduce(
-      (sum, r) => sum + CalculationEngine.normalizeToMonthly(r),
-      0
-    );
+    return this.sumRulesByType(this.getRules(), 'expense');
   }
 
   /**
@@ -134,9 +128,34 @@ export class RuleManager {
   }
 
   /**
+   * Get a summary for a specific month (projected + actuals)
+   * @param targetMonthISO - Month in "YYYY-MM" format
+   */
+  getMonthSummary(targetMonthISO: string): MonthSummary {
+    const rules = this.getBudgetRulesForMonth(targetMonthISO);
+
+    return {
+      totalIncome: this.sumRulesByType(rules, 'income'),
+      totalPlannedExpense: this.sumRulesByType(rules, 'expense'),
+      // TODO: Replace with real ledger data once available.
+      totalActualExpense: 0,
+    };
+  }
+
+  /**
    * Get rule count
    */
   getRuleCount(): number {
     return this.getRules().length;
+  }
+
+  // --------------------------------------------------------------------------
+  // Internal Helpers
+  // --------------------------------------------------------------------------
+
+  private sumRulesByType(rules: BudgetRule[], type: 'income' | 'expense'): number {
+    return rules
+      .filter((r) => r.type === type)
+      .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
   }
 }
