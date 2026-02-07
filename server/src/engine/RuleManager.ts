@@ -135,8 +135,8 @@ export class RuleManager {
     const rules = this.getBudgetRulesForMonth(targetMonthISO);
 
     return {
-      totalIncome: this.sumRulesByType(rules, 'income'),
-      totalPlannedExpense: this.sumRulesByType(rules, 'expense'),
+      totalIncome: this.sumRulesByTypeForMonth(rules, 'income', targetMonthISO),
+      totalPlannedExpense: this.sumRulesByTypeForMonth(rules, 'expense', targetMonthISO),
       // TODO: Replace with real ledger data once available.
       totalActualExpense: 0,
     };
@@ -157,5 +157,15 @@ export class RuleManager {
     return rules
       .filter((r) => r.type === type)
       .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
+  }
+
+  private sumRulesByTypeForMonth(
+    rules: BudgetRule[],
+    type: 'income' | 'expense',
+    monthIso: string
+  ): number {
+    return rules
+      .filter((r) => r.type === type)
+      .reduce((sum, r) => sum + CalculationEngine.plannedAmountForMonth(r, monthIso), 0);
   }
 }

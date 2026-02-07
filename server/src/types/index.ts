@@ -37,6 +37,7 @@ export interface BudgetRule {
   accountId?: string;
   toAccountId?: string;
   category: string;
+  categoryKind?: CategoryKind;
   notes: string;
   isRecurring: boolean;
   frequency?: Frequency;
@@ -115,6 +116,7 @@ export interface BudgetRuleRow {
   account_id: string | null;
   to_account_id: string | null;
   category: string;
+  category_kind: CategoryKind | null;
   notes: string;
   is_recurring: number;
   frequency: Frequency | null;
@@ -194,6 +196,7 @@ export interface CreateBudgetRuleRequest {
   accountId?: string;
   toAccountId?: string;
   category: string;
+  categoryKind?: CategoryKind;
   notes: string;
   isRecurring: boolean;
   frequency?: Frequency;
@@ -209,6 +212,7 @@ export interface UpdateBudgetRuleRequest {
   accountId?: string;
   toAccountId?: string;
   category?: string;
+  categoryKind?: CategoryKind;
   notes?: string;
   isRecurring?: boolean;
   frequency?: Frequency;

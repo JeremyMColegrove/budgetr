@@ -78,7 +78,7 @@ export function TransactionRuleForm({
             setAccountId(editingRule.accountId ?? '');
             setToAccountId(editingRule.toAccountId ?? '');
             setCategory(editingRule.category);
-            setCategoryKind(expenseCategoryKinds[editingRule.category] ?? 'spending');
+            setCategoryKind(editingRule.categoryKind ?? expenseCategoryKinds[editingRule.category] ?? 'spending');
             setNotes(editingRule.notes);
             setIsRecurring(editingRule.isRecurring);
             setFrequency(editingRule.frequency ?? 'monthly');
@@ -145,6 +145,7 @@ export function TransactionRuleForm({
             accountId: accountId || undefined,
             toAccountId: toAccountId || undefined,
             category,
+            categoryKind: type === 'expense' ? categoryKind : undefined,
             notes: notes.trim(),
             isRecurring,
             frequency: isRecurring ? frequency : undefined,

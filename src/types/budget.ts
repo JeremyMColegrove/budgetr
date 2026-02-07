@@ -63,6 +63,7 @@ export interface BudgetRule {
   accountId?: string; // Primary account: funding source (expense) or destination (income)
   toAccountId?: string; // Secondary account: e.g., loan account being paid down
   category: string;
+  categoryKind?: 'bill' | 'spending';
   notes: string;
   isRecurring: boolean;
   frequency?: Frequency;

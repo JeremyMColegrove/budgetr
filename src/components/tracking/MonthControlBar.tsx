@@ -7,10 +7,10 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
 import { useTemporalState } from '@/hooks/useTemporalState';
-import type { MonthSummary } from '@/types/engine';
 import { addMonths, formatMonthLabel, parseMonthInput, toMonthString } from '@/lib/date-utils';
+import { cn } from '@/lib/utils';
+import type { MonthSummary } from '@/types/engine';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -76,7 +76,7 @@ export function MonthControlBar({ currentViewMonth, onChangeMonth, summary, clas
 
   return (
     <div className={cn(
-      'sticky top-0 z-30 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
+      'sticky top-0 z-30 w-full max-w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80',
       className
     )}>
       <div className="flex flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:justify-between">

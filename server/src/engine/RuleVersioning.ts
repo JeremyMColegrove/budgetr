@@ -20,6 +20,7 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
     accountId: row.account_id ?? undefined,
     toAccountId: row.to_account_id ?? undefined,
     category: row.category,
+    categoryKind: row.category_kind ?? undefined,
     notes: row.notes,
     isRecurring: row.is_recurring === 1,
     frequency: row.frequency ?? undefined,
@@ -122,6 +123,11 @@ function updateRuleInPlace(
     values.push(updates.category);
   }
 
+  if (updates.categoryKind !== undefined) {
+    updateFields.push('category_kind = ?');
+    values.push(updates.categoryKind);
+  }
+
   if (updates.notes !== undefined) {
     updateFields.push('notes = ?');
     values.push(updates.notes);
@@ -193,8 +199,8 @@ function splitRule(
   db.prepare(
     `INSERT INTO budget_rules (
       id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-      category, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      category, category_kind, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     newRuleId,
     userId,
@@ -205,6 +211,7 @@ function splitRule(
     updates.accountId !== undefined ? (updates.accountId ?? null) : (existingRule.accountId ?? null),
     updates.toAccountId !== undefined ? (updates.toAccountId ?? null) : (existingRule.toAccountId ?? null),
     updates.category ?? existingRule.category,
+    updates.categoryKind ?? existingRule.categoryKind ?? 'spending',
     updates.notes ?? existingRule.notes,
     updates.isRecurring !== undefined ? (updates.isRecurring ? 1 : 0) : (existingRule.isRecurring ? 1 : 0),
     updates.frequency !== undefined ? (updates.frequency ?? null) : (existingRule.frequency ?? null),

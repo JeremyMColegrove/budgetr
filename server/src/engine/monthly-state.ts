@@ -48,6 +48,7 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
     accountId: row.account_id ?? undefined,
     toAccountId: row.to_account_id ?? undefined,
     category: row.category,
+    categoryKind: row.category_kind ?? undefined,
     notes: row.notes,
     isRecurring: row.is_recurring === 1,
     frequency: row.frequency ?? undefined,
@@ -100,14 +101,14 @@ export function getMonthlyState(profileId: string, monthIso: string, userId: str
   const incomePlanned = rules
     .filter((rule) => rule.type === 'income')
     .reduce((sum, rule) => {
-      const planned = CalculationEngine.normalizeToMonthly(rule);
+      const planned = CalculationEngine.plannedAmountForMonth(rule, monthIso);
       rulePlanned.set(rule.id, planned);
       return sum + planned;
     }, 0);
 
   const expenseRules = rules.filter((rule) => rule.type === 'expense');
   expenseRules.forEach((rule) => {
-    rulePlanned.set(rule.id, CalculationEngine.normalizeToMonthly(rule));
+    rulePlanned.set(rule.id, CalculationEngine.plannedAmountForMonth(rule, monthIso));
   });
 
   const ledgerByRule = new Map<string, LedgerEntryRow[]>();
@@ -121,7 +122,7 @@ export function getMonthlyState(profileId: string, monthIso: string, userId: str
   const spending: MonthlyState['spending'] = [];
 
   expenseRules.forEach((rule) => {
-    const kind = categoryKinds.get(rule.category) ?? 'spending';
+    const kind = rule.categoryKind ?? categoryKinds.get(rule.category) ?? 'spending';
     const planned = rulePlanned.get(rule.id) ?? rule.amount;
     const entries = ledgerByRule.get(rule.id) ?? [];
     const totalSpent = entries.reduce((sum, entry) => sum + entry.amount, 0);

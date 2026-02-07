@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS budget_rules (
   account_id TEXT,
   to_account_id TEXT,
   category TEXT NOT NULL,
+  category_kind TEXT NOT NULL DEFAULT 'spending' CHECK(category_kind IN ('bill', 'spending')),
   notes TEXT NOT NULL,
   is_recurring INTEGER DEFAULT 0,
   frequency TEXT,

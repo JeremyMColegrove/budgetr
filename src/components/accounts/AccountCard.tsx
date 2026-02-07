@@ -94,16 +94,16 @@ export function AccountCard({ account, projection, onEdit, onDelete }: AccountCa
             </CardHeader>
 
             <CardContent className="space-y-3">
-                {/* Starting Balance */}
+                {/* Current Balance */}
                 <div className="flex justify-between items-center">
-                    <span className="text-xs text-muted-foreground">Starting Balance</span>
+                    <span className="text-xs text-muted-foreground">Current Balance</span>
                     <span className={cn(
                         'font-mono text-sm font-semibold',
-                        account.startingBalance >= 0
+                        (projection?.startingBalance ?? account.startingBalance) >= 0
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : 'text-rose-600 dark:text-rose-400'
                     )}>
-                        {formatCurrency(account.startingBalance)}
+                        {formatCurrency(projection?.startingBalance ?? account.startingBalance)}
                     </span>
                 </div>
 

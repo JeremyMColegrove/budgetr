@@ -82,6 +82,7 @@ export function TrackingPage({ onNavigate }: TrackingPageProps) {
           paidOn: entry?.date,
         };
       })(),
+      monthIso: monthlyState.monthIso,
       id: bill.ruleId,
       name: bill.label,
       amount: bill.planned,
@@ -133,7 +134,7 @@ export function TrackingPage({ onNavigate }: TrackingPageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="bg-background">
       <MonthControlBar
         currentViewMonth={currentViewMonth}
         onChangeMonth={setCurrentViewMonth}

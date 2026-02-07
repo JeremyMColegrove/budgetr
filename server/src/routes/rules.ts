@@ -33,6 +33,7 @@ function mapBudgetRuleRow(row: BudgetRuleRow): BudgetRule {
     accountId: row.account_id ?? undefined,
     toAccountId: row.to_account_id ?? undefined,
     category: row.category,
+    categoryKind: row.category_kind ?? undefined,
     notes: row.notes,
     isRecurring: row.is_recurring === 1,
     frequency: row.frequency ?? undefined,
@@ -102,6 +103,7 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     accountId,
     toAccountId,
     category,
+    categoryKind,
     notes,
     isRecurring,
     frequency,
@@ -126,6 +128,10 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
   if (!category || typeof category !== 'string' || category.trim().length === 0) {
     return res.status(400).json({ error: 'Category is required' });
   }
+
+  if (categoryKind !== undefined && categoryKind !== 'bill' && categoryKind !== 'spending') {
+    return res.status(400).json({ error: 'categoryKind must be bill or spending' });
+  }
   
   if (!startMonth || typeof startMonth !== 'string') {
     return res.status(400).json({ error: 'startMonth is required (YYYY-MM format)' });
@@ -148,11 +154,16 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
   const id = generateId();
   const timestamp = now();
 
+  const storedCategoryKind = categoryKind ?? (type === 'expense'
+    ? (db.prepare('SELECT kind FROM categories WHERE user_id = ? AND name = ?').get(userId, category.trim()) as { kind?: 'bill' | 'spending' } | undefined)?.kind
+    : undefined);
+  const finalCategoryKind = type === 'expense' ? (storedCategoryKind ?? 'spending') : 'spending';
+
   db.prepare(
     `INSERT INTO budget_rules (
       id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-      category, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      category, category_kind, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
@@ -163,6 +174,7 @@ rulesRouter.post('/profiles/:profileId/rules', (req, res) => {
     accountId ?? null,
     toAccountId ?? null,
     category.trim(),
+    finalCategoryKind,
     notes ?? '',
     isRecurring ? 1 : 0,
     frequency ?? null,

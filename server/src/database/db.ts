@@ -76,6 +76,7 @@ function migrateExistingData(): void {
   migrateToCategorySchema();
   migrateToLedgerSchema();
   migrateToAddDefaultPaidColumn();
+  migrateToAddCategoryKindColumn();
 
   // Migration 4: Add is_default_paid column if missing
   migrateToAddDefaultPaidColumn();
@@ -145,6 +146,7 @@ function migrateToMonthGrainSchema(): void {
         account_id TEXT,
         to_account_id TEXT,
         category TEXT NOT NULL,
+        category_kind TEXT NOT NULL DEFAULT 'spending' CHECK(category_kind IN ('bill', 'spending')),
         notes TEXT NOT NULL,
         is_recurring INTEGER DEFAULT 0,
         frequency TEXT,
@@ -172,22 +174,22 @@ function migrateToMonthGrainSchema(): void {
           db.exec(`
             INSERT INTO budget_rules_new (
               id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-              category, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+              category, category_kind, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
             )
             SELECT 
               id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-              category, notes, is_recurring, frequency, start_date, '${currentMonth}', NULL, is_default_paid, created_at, updated_at
+              category, 'spending', notes, is_recurring, frequency, start_date, '${currentMonth}', NULL, is_default_paid, created_at, updated_at
             FROM budget_rules
           `);
       } else {
           db.exec(`
             INSERT INTO budget_rules_new (
               id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-              category, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+              category, category_kind, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
             )
             SELECT 
               id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-              category, notes, is_recurring, frequency, start_date, '${currentMonth}', NULL, 0, created_at, updated_at
+              category, 'spending', notes, is_recurring, frequency, start_date, '${currentMonth}', NULL, 0, created_at, updated_at
             FROM budget_rules
           `);
       }
@@ -196,11 +198,11 @@ function migrateToMonthGrainSchema(): void {
       db.exec(`
         INSERT INTO budget_rules_new (
           id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-          category, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+          category, category_kind, notes, is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
         )
         SELECT 
           id, user_id, profile_id, label, amount, type, account_id, to_account_id,
-          category, notes, 0, NULL, NULL, '${currentMonth}', NULL, 0, created_at, updated_at
+          category, 'spending', notes, 0, NULL, NULL, '${currentMonth}', NULL, 0, created_at, updated_at
         FROM budget_rules
       `);
     }
@@ -314,6 +316,40 @@ function migrateToAddDefaultPaidColumn(): void {
 
   } catch (error) {
     console.error('Migration error (is_default_paid):', error);
+    throw error;
+  }
+}
+
+// Migration: Add category_kind column (if missing)
+function migrateToAddCategoryKindColumn(): void {
+  try {
+    const tableInfo = db.prepare(`
+      SELECT sql FROM sqlite_master 
+      WHERE type='table' AND name='budget_rules'
+    `).get() as { sql: string } | undefined;
+    
+    if (!tableInfo) return;
+
+    const hasCategoryKind = tableInfo.sql.includes('category_kind');
+    
+    if (hasCategoryKind) {
+      return;
+    }
+
+    console.log('⚠ Adding category_kind column to budget_rules...');
+    db.exec("ALTER TABLE budget_rules ADD COLUMN category_kind TEXT NOT NULL DEFAULT 'spending' CHECK(category_kind IN ('bill', 'spending'))");
+
+    db.exec(`
+      UPDATE budget_rules
+      SET category_kind = COALESCE(
+        (SELECT kind FROM categories WHERE categories.user_id = budget_rules.user_id AND categories.name = budget_rules.category),
+        category_kind
+      )
+    `);
+
+    console.log('✓ Added category_kind column');
+  } catch (error) {
+    console.error('Migration error (category_kind):', error);
     throw error;
   }
 }

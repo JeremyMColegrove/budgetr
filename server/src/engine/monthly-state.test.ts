@@ -33,9 +33,9 @@ describe('getMonthlyState', () => {
 
     db.prepare(
       `INSERT INTO budget_rules (
-        id, user_id, profile_id, label, amount, type, category, notes,
+        id, user_id, profile_id, label, amount, type, category, category_kind, notes,
         is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       'rule-bill',
       'user-1',
@@ -44,6 +44,7 @@ describe('getMonthlyState', () => {
       1200,
       'expense',
       'Rent',
+      'bill',
       '',
       1,
       'monthly',
@@ -57,20 +58,21 @@ describe('getMonthlyState', () => {
 
     db.prepare(
       `INSERT INTO budget_rules (
-        id, user_id, profile_id, label, amount, type, category, notes,
+        id, user_id, profile_id, label, amount, type, category, category_kind, notes,
         is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       'rule-spend',
       'user-1',
       'profile-1',
       'Groceries',
-      200,
+      75,
       'expense',
       'Groceries',
+      'spending',
       '',
       1,
-      'monthly',
+      'bi-weekly',
       '2026-02-01',
       '2026-02',
       null,
@@ -103,9 +105,9 @@ describe('getMonthlyState', () => {
 
     const groceries = state.spending.find((item) => item.ruleId === 'rule-spend');
     expect(groceries).toBeTruthy();
-    expect(groceries?.planned).toBe(200);
+    expect(groceries?.planned).toBe(150);
     expect(groceries?.spent).toBe(75);
-    expect(groceries?.remaining).toBe(125);
+    expect(groceries?.remaining).toBe(75);
     expect(groceries?.transactionCount).toBe(2);
   });
 
@@ -114,5 +116,71 @@ describe('getMonthlyState', () => {
     const rent = state.bills.find((item) => item.ruleId === 'rule-bill');
     expect(rent?.isPaid).toBe(true);
     expect(rent?.actual).toBe(1200);
+  });
+
+  it('keeps fixed vs variable classification per rule even when categories differ', () => {
+    const timestamp = new Date('2026-02-01T00:00:00.000Z').toISOString();
+
+    db.prepare(
+      'INSERT INTO categories (id, user_id, name, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run('cat-3', 'user-1', 'Utilities', 'bill', timestamp, timestamp);
+
+    db.prepare(
+      `INSERT INTO budget_rules (
+        id, user_id, profile_id, label, amount, type, category, category_kind, notes,
+        is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'rule-fixed-utilities',
+      'user-1',
+      'profile-1',
+      'Utilities - Fixed',
+      90,
+      'expense',
+      'Utilities',
+      'bill',
+      '',
+      1,
+      'monthly',
+      '2026-02-01',
+      '2026-02',
+      null,
+      0,
+      timestamp,
+      timestamp
+    );
+
+    db.prepare(
+      `INSERT INTO budget_rules (
+        id, user_id, profile_id, label, amount, type, category, category_kind, notes,
+        is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'rule-variable-utilities',
+      'user-1',
+      'profile-1',
+      'Utilities - Variable',
+      120,
+      'expense',
+      'Utilities',
+      'spending',
+      '',
+      1,
+      'monthly',
+      '2026-02-01',
+      '2026-02',
+      null,
+      0,
+      timestamp,
+      timestamp
+    );
+
+    const state = getMonthlyState('profile-1', '2026-02', 'user-1');
+
+    const fixed = state.bills.find((item) => item.ruleId === 'rule-fixed-utilities');
+    const variable = state.spending.find((item) => item.ruleId === 'rule-variable-utilities');
+
+    expect(fixed).toBeTruthy();
+    expect(variable).toBeTruthy();
   });
 });
