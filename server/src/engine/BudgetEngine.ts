@@ -15,6 +15,7 @@ import { ASSET_ACCOUNT_TYPES } from '../types/index.js';
 import { AccountManager } from './AccountManager.js';
 import { ProjectionEngine } from './ProjectionEngine.js';
 import { RuleManager } from './RuleManager.js';
+import { CalculationEngine } from './CalculationEngine.js';
 import { getCurrentMonth } from '../utils/date-utils.js';
 
 // ----------------------------------------------------------------------------
@@ -48,10 +49,10 @@ export class BudgetEngine {
     return {
       profileId: this.profileId,
       profileName: profile.name,
-      netWorth: this.accountManager.getNetWorth(),
-      totalIncome: this.ruleManager.getTotalIncome(),
-      totalExpenses: this.ruleManager.getTotalExpenses(),
-      amountLeftToAllocate: this.ruleManager.getAmountLeftToAllocate(),
+      netWorth: CalculationEngine.roundCurrency(this.accountManager.getNetWorth()),
+      totalIncome: CalculationEngine.roundCurrency(this.ruleManager.getTotalIncome()),
+      totalExpenses: CalculationEngine.roundCurrency(this.ruleManager.getTotalExpenses()),
+      amountLeftToAllocate: CalculationEngine.roundCurrency(this.ruleManager.getAmountLeftToAllocate()),
       accountCount: this.accountManager.getAccountCount(),
       ruleCount: this.ruleManager.getRuleCount(),
     };

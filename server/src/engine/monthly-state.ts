@@ -128,13 +128,13 @@ export function getMonthlyState(profileId: string, monthIso: string, userId: str
     const totalSpent = entries.reduce((sum, entry) => sum + entry.amount, 0);
 
     if (kind === 'bill') {
-      const firstEntry = entries[0];
+      const billActual = totalSpent;
       bills.push({
         ruleId: rule.id,
         label: rule.label,
         planned,
-        actual: entries.length > 0 ? firstEntry.amount : null,
-        isPaid: entries.length > 0,
+        actual: entries.length > 0 ? billActual : null,
+        isPaid: billActual >= planned,
         dueDate: rule.startDate ? new Date(rule.startDate).getDate() : undefined,
       });
       return;
@@ -157,10 +157,10 @@ export function getMonthlyState(profileId: string, monthIso: string, userId: str
   return {
     monthIso,
     summary: {
-      income: incomePlanned,
-      totalPlannedExpenses,
-      totalActualSpent,
-      safeToSpend: incomePlanned - (totalActualSpent + remainingBills),
+      income: CalculationEngine.roundCurrency(incomePlanned),
+      totalPlannedExpenses: CalculationEngine.roundCurrency(totalPlannedExpenses),
+      totalActualSpent: CalculationEngine.roundCurrency(totalActualSpent),
+      safeToSpend: CalculationEngine.roundCurrency(incomePlanned - (totalActualSpent + remainingBills)),
     },
     bills,
     spending,

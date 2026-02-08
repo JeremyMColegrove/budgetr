@@ -30,7 +30,7 @@ export class ProjectionEngine {
         r.type === 'income' &&
         ProjectionEngine.isRuleActiveInMonth(r, targetMonth)
       )
-      .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
+      .reduce((sum, r) => sum + CalculationEngine.plannedAmountForMonth(r, targetMonth), 0);
 
     // Debt paydown: expenses with toAccountId reduce liability (treated as "income" for the loan)
     const debtPaydown = rules
@@ -39,7 +39,7 @@ export class ProjectionEngine {
         r.type === 'expense' &&
         ProjectionEngine.isRuleActiveInMonth(r, targetMonth)
       )
-      .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
+      .reduce((sum, r) => sum + CalculationEngine.plannedAmountForMonth(r, targetMonth), 0);
 
     return directIncome + debtPaydown;
   }
@@ -59,7 +59,7 @@ export class ProjectionEngine {
         r.type === 'expense' &&
         ProjectionEngine.isRuleActiveInMonth(r, targetMonth)
       )
-      .reduce((sum, r) => sum + CalculationEngine.normalizeToMonthly(r), 0);
+      .reduce((sum, r) => sum + CalculationEngine.plannedAmountForMonth(r, targetMonth), 0);
   }
 
   /**
@@ -119,10 +119,10 @@ export class ProjectionEngine {
     return {
       accountId: account.id,
       startingBalance: account.startingBalance,
-      monthlyIncome: currentMonthlyIncome,
-      monthlyExpenses: currentMonthlyExpenses,
-      monthlyNet: currentMonthlyNet,
-      projectedBalance,
+      monthlyIncome: CalculationEngine.roundCurrency(currentMonthlyIncome),
+      monthlyExpenses: CalculationEngine.roundCurrency(currentMonthlyExpenses),
+      monthlyNet: CalculationEngine.roundCurrency(currentMonthlyNet),
+      projectedBalance: CalculationEngine.roundCurrency(projectedBalance),
       months,
     };
   }
@@ -183,4 +183,3 @@ export class ProjectionEngine {
       .reduce((sum, a) => sum + (projections.get(a.id)?.projectedBalance ?? a.startingBalance), 0);
   }
 }
-

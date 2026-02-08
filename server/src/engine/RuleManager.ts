@@ -133,12 +133,26 @@ export class RuleManager {
    */
   getMonthSummary(targetMonthISO: string): MonthSummary {
     const rules = this.getBudgetRulesForMonth(targetMonthISO);
+    const totalActualExpenseRow = db
+      .prepare(
+        `SELECT COALESCE(SUM(le.amount), 0) as total
+         FROM ledger_entries le
+         JOIN budget_rules br ON br.id = le.rule_id
+         WHERE le.profile_id = ?
+         AND le.month_iso = ?
+         AND br.type = 'expense'`
+      )
+      .get(this.profileId, targetMonthISO) as { total: number } | undefined;
+    const totalActualExpense = totalActualExpenseRow?.total ?? 0;
 
     return {
-      totalIncome: this.sumRulesByTypeForMonth(rules, 'income', targetMonthISO),
-      totalPlannedExpense: this.sumRulesByTypeForMonth(rules, 'expense', targetMonthISO),
-      // TODO: Replace with real ledger data once available.
-      totalActualExpense: 0,
+      totalIncome: CalculationEngine.roundCurrency(
+        this.sumRulesByTypeForMonth(rules, 'income', targetMonthISO)
+      ),
+      totalPlannedExpense: CalculationEngine.roundCurrency(
+        this.sumRulesByTypeForMonth(rules, 'expense', targetMonthISO)
+      ),
+      totalActualExpense: CalculationEngine.roundCurrency(totalActualExpense),
     };
   }
 

@@ -138,4 +138,49 @@ describe('ProjectionEngine', () => {
      expect(result.projectedBalance).toBe(13000);
      expect(result.monthlyIncome).toBe(2000);
   });
+
+  it('uses calendar-accurate weekly and bi-weekly occurrences', () => {
+    const rules: BudgetRule[] = [
+      createRule({
+        amount: 100,
+        type: 'income',
+        frequency: 'weekly',
+        startDate: '2026-01-15',
+        startMonth: '2026-01',
+      }),
+      createRule({
+        amount: 50,
+        type: 'expense',
+        frequency: 'bi-weekly',
+        startDate: '2026-01-03',
+        startMonth: '2026-01',
+      }),
+    ];
+
+    const result = ProjectionEngine.calculateAccountProjection(baseAccount, rules, 1, '2026-02');
+
+    // Feb 2026: weekly 4 occurrences (400 income), bi-weekly 2 occurrences (100 expense)
+    expect(result.monthlyIncome).toBe(400);
+    expect(result.monthlyExpenses).toBe(100);
+    expect(result.projectedBalance).toBe(1300); // 1000 + 300
+  });
+
+  it('applies non-recurring rules only in the start month', () => {
+    const rules: BudgetRule[] = [
+      createRule({
+        amount: 500,
+        type: 'income',
+        isRecurring: false,
+        frequency: undefined,
+        startMonth: '2026-03',
+        startDate: undefined,
+      }),
+    ];
+
+    const result = ProjectionEngine.calculateAccountProjection(baseAccount, rules, 2, '2026-02');
+
+    // Feb: 0, Mar: 500
+    expect(result.monthlyIncome).toBe(0);
+    expect(result.projectedBalance).toBe(1500);
+  });
 });

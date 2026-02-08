@@ -294,6 +294,55 @@ describe('BudgetEngine account balances with ledger actuals', () => {
     expect(checking?.projection.projectedBalance).toBe(800);
   });
 
+  it('computes profile summary totals using average monthly normalization', () => {
+    const engine = BudgetEngine.forProfile('profile-1');
+    const summary = engine.getProfileSummary();
+
+    expect(summary.netWorth).toBe(-500);
+    expect(summary.totalIncome).toBe(400);
+    expect(summary.totalExpenses).toBe(600);
+    expect(summary.amountLeftToAllocate).toBe(-200);
+  });
+
+  it('normalizes recurring rules to average monthly totals in profile summary', () => {
+    const timestamp = new Date('2026-01-01T00:00:00.000Z').toISOString();
+
+    db.prepare(
+      `INSERT INTO budget_rules (
+        id, user_id, profile_id, label, amount, type, account_id, to_account_id,
+        category, category_kind, notes, is_recurring, frequency, start_date, start_month,
+        end_month, is_default_paid, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'rule-weekly-income',
+      'user-1',
+      'profile-1',
+      'Weekly Bonus',
+      1000,
+      'income',
+      'acc-check',
+      null,
+      'Bonus',
+      'spending',
+      '',
+      1,
+      'weekly',
+      '2026-01-01',
+      '2026-01',
+      null,
+      0,
+      timestamp,
+      timestamp
+    );
+
+    const engine = BudgetEngine.forProfile('profile-1');
+    const summary = engine.getProfileSummary();
+
+    // 400 monthly income + (1000 * 4.33) = 4730
+    expect(summary.totalIncome).toBe(4730);
+    expect(summary.amountLeftToAllocate).toBe(4130);
+  });
+
   it('falls back to account starting balance when no ledger rows exist', () => {
     const engine = BudgetEngine.forProfile('profile-1');
 

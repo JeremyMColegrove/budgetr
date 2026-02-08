@@ -183,4 +183,63 @@ describe('getMonthlyState', () => {
     expect(fixed).toBeTruthy();
     expect(variable).toBeTruthy();
   });
+
+  it('sums bill entries and marks paid only when planned is met', () => {
+    const timestamp = new Date('2026-02-01T00:00:00.000Z').toISOString();
+
+    db.prepare(
+      `INSERT INTO budget_rules (
+        id, user_id, profile_id, label, amount, type, category, category_kind, notes,
+        is_recurring, frequency, start_date, start_month, end_month, is_default_paid, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'rule-bill-split',
+      'user-1',
+      'profile-1',
+      'Insurance',
+      1000,
+      'expense',
+      'Insurance',
+      'bill',
+      '',
+      1,
+      'monthly',
+      '2026-02-01',
+      '2026-02',
+      null,
+      0,
+      timestamp,
+      timestamp
+    );
+
+    db.prepare(
+      `INSERT INTO ledger_entries (
+        id, user_id, profile_id, month_iso, rule_id, amount, date, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('led-split-1', 'user-1', 'profile-1', '2026-02', 'rule-bill-split', 400, '2026-02-03', 'Part 1', timestamp);
+
+    db.prepare(
+      `INSERT INTO ledger_entries (
+        id, user_id, profile_id, month_iso, rule_id, amount, date, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('led-split-2', 'user-1', 'profile-1', '2026-02', 'rule-bill-split', 500, '2026-02-10', 'Part 2', timestamp);
+
+    let state = getMonthlyState('profile-1', '2026-02', 'user-1');
+    let bill = state.bills.find((item) => item.ruleId === 'rule-bill-split');
+
+    expect(bill?.actual).toBe(900);
+    expect(bill?.isPaid).toBe(false);
+
+    db.prepare(
+      `INSERT INTO ledger_entries (
+        id, user_id, profile_id, month_iso, rule_id, amount, date, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('led-split-3', 'user-1', 'profile-1', '2026-02', 'rule-bill-split', 200, '2026-02-20', 'Part 3', timestamp);
+
+    state = getMonthlyState('profile-1', '2026-02', 'user-1');
+    bill = state.bills.find((item) => item.ruleId === 'rule-bill-split');
+
+    expect(bill?.actual).toBe(1100);
+    expect(bill?.isPaid).toBe(true);
+  });
 });

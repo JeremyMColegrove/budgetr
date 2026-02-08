@@ -35,6 +35,11 @@ export class CalculationEngine {
    * Uses startDate if present; otherwise uses startMonth + '-01' as anchor.
    */
   static plannedAmountForMonth(rule: BudgetRule, monthIso: string): number {
+    if (!rule.isRecurring) {
+      const anchorMonth = (rule.startDate ?? `${rule.startMonth}-01`).slice(0, 7);
+      return anchorMonth === monthIso ? rule.amount : 0;
+    }
+
     if (!rule.isRecurring || !rule.frequency) {
       return rule.amount;
     }
