@@ -21,6 +21,7 @@ import { ArrowRight, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 
 interface TransactionRuleTableProps {
     type: TransactionType;
+    monthlyTotal?: number;
     onEdit: (rule: BudgetRule) => void;
 }
 
@@ -31,22 +32,7 @@ const FREQUENCY_LABELS: Record<string, string> = {
     yearly: 'Yearly',
 };
 
-const FREQUENCY_TO_MONTHLY: Record<string, number> = {
-    weekly: 4.33,
-    'bi-weekly': 2.17,
-    monthly: 1,
-    yearly: 1 / 12,
-};
-
-// Local helper to normalize rule amounts to monthly values
-function getMonthlyNormalizedAmount(rule: BudgetRule): number {
-    if (!rule.isRecurring || !rule.frequency) {
-        return rule.amount;
-    }
-    return rule.amount * FREQUENCY_TO_MONTHLY[rule.frequency];
-}
-
-export function TransactionRuleTable({ type, onEdit }: TransactionRuleTableProps) {
+export function TransactionRuleTable({ type, monthlyTotal, onEdit }: TransactionRuleTableProps) {
     const profile = useBudgetStore((s) => s.getActiveProfile());
     const deleteRule = useBudgetStore((s) => s.deleteRule);
     const getAccountById = useBudgetStore((s) => s.getAccountById);
@@ -61,7 +47,7 @@ export function TransactionRuleTable({ type, onEdit }: TransactionRuleTableProps
         }).format(amount);
     };
 
-    const total = rules.reduce((sum, r) => sum + getMonthlyNormalizedAmount(r), 0);
+    const total = monthlyTotal ?? 0;
 
     if (rules.length === 0) {
         return (

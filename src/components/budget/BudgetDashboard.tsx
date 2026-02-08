@@ -6,10 +6,12 @@
 
 import { PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
+import { rulesApi } from '@/lib/api-client';
+import { parseMonthInput, toMonthString } from '@/lib/date-utils';
 import { useBudgetStore } from '@/store/budget-store';
 import type { BudgetRule } from '@/types/budget';
 import { Plus, TrendingDown, TrendingUp } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BudgetHeader } from './BudgetHeader';
 import { ProfileSelector } from './ProfileSelector';
 import { TransactionRuleForm } from './TransactionRuleForm';
@@ -21,6 +23,12 @@ export function BudgetDashboard() {
     const isInitialized = useBudgetStore((s) => s.isInitialized);
     const activeProfile = useBudgetStore((s) => s.getActiveProfile());
 
+    const monthIso = useMemo(() => toMonthString(parseMonthInput(new Date())), []);
+    const [monthlySummary, setMonthlySummary] = useState<{
+        totalIncome: number;
+        totalPlannedExpense: number;
+    } | null>(null);
+
     // Form dialog state
     const [formOpen, setFormOpen] = useState(false);
     const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
@@ -29,6 +37,20 @@ export function BudgetDashboard() {
     useEffect(() => {
         initialize();
     }, [initialize]);
+
+    useEffect(() => {
+        const fetchSummary = async () => {
+            if (!activeProfile) return;
+            try {
+                const summary = await rulesApi.getSummary(activeProfile.id, monthIso);
+                setMonthlySummary(summary);
+            } catch (error) {
+                console.error('Failed to fetch month summary:', error);
+            }
+        };
+
+        fetchSummary();
+    }, [activeProfile, monthIso]);
 
     const handleAddRule = () => {
         setEditingRule(null);
@@ -72,7 +94,11 @@ export function BudgetDashboard() {
 
                 <main className="space-y-8 print:space-y-4">
                     {/* Budget Overview */}
-                    <BudgetHeader />
+                    <BudgetHeader
+                        totalIncome={monthlySummary?.totalIncome ?? 0}
+                        totalExpenses={monthlySummary?.totalPlannedExpense ?? 0}
+                        amountLeftToAllocate={(monthlySummary?.totalIncome ?? 0) - (monthlySummary?.totalPlannedExpense ?? 0)}
+                    />
 
                     {/* Income Section */}
                     <section className="space-y-2">
@@ -80,7 +106,11 @@ export function BudgetDashboard() {
                             <TrendingUp className="size-4 text-emerald-600 dark:text-emerald-400" />
                             <h2 className="text-sm font-semibold">Income</h2>
                         </div>
-                        <TransactionRuleTable type="income" onEdit={handleEditRule} />
+                        <TransactionRuleTable
+                            type="income"
+                            monthlyTotal={monthlySummary?.totalIncome}
+                            onEdit={handleEditRule}
+                        />
                     </section>
 
                     {/* Expenses Section */}
@@ -89,7 +119,11 @@ export function BudgetDashboard() {
                             <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />
                             <h2 className="text-sm font-semibold">Expenses</h2>
                         </div>
-                        <TransactionRuleTable type="expense" onEdit={handleEditRule} />
+                        <TransactionRuleTable
+                            type="expense"
+                            monthlyTotal={monthlySummary?.totalPlannedExpense}
+                            onEdit={handleEditRule}
+                        />
                     </section>
                 </main>
 

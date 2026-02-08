@@ -4,39 +4,16 @@
 // Displays the "Amount Left to Allocate" with color-coded visual feedback.
 // ============================================================================
 
-import { profilesApi } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
-import { useBudgetStore } from '@/store/budget-store';
-import { useEffect, useState } from 'react';
 
-export function BudgetHeader() {
-    const activeProfile = useBudgetStore((s) => s.getActiveProfile());
+interface BudgetHeaderProps {
+    totalIncome: number;
+    totalExpenses: number;
+    amountLeftToAllocate: number;
+}
 
-    // Fetch summary from backend
-    const [summary, setSummary] = useState<{ totalIncome: number; totalExpenses: number; amountLeftToAllocate: number } | null>(null);
-
-    useEffect(() => {
-        const fetchSummary = async () => {
-            if (!activeProfile) return;
-
-            try {
-                const data = await profilesApi.getSummary(activeProfile.id);
-                setSummary({
-                    totalIncome: data.totalIncome,
-                    totalExpenses: data.totalExpenses,
-                    amountLeftToAllocate: data.amountLeftToAllocate,
-                });
-            } catch (error) {
-                console.error('Failed to fetch summary:', error);
-            }
-        };
-
-        fetchSummary();
-    }, [activeProfile]);
-
-    const totalIncome = summary?.totalIncome ?? 0;
-    const totalExpenses = summary?.totalExpenses ?? 0;
-    const amountLeft = summary?.amountLeftToAllocate ?? 0;
+export function BudgetHeader({ totalIncome, totalExpenses, amountLeftToAllocate }: BudgetHeaderProps) {
+    const amountLeft = amountLeftToAllocate;
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-US', {

@@ -88,12 +88,20 @@ describe('BudgetDashboard', () => {
       http.get(`${API_BASE}/profiles`, () => {
         return HttpResponse.json([profile]);
       }),
-      http.get(`${API_BASE}/profiles/${profile.id}/summary`, () => {
-        // 1000 + (2000 * 2.17) + (100 * 4.33) = 5773
+      http.get(`${API_BASE}/profiles/${profile.id}/rules/summary`, ({ request }) => {
+        const url = new URL(request.url);
+        const month = url.searchParams.get('month');
+        if (month !== '2026-02') {
+          return HttpResponse.json({
+            totalIncome: 0,
+            totalPlannedExpense: 0,
+            totalActualExpense: 0,
+          });
+        }
         return HttpResponse.json({
-          totalIncome: 5773,
-          totalExpenses: 1500,
-          amountLeftToAllocate: 4273,
+          totalIncome: 5700,
+          totalPlannedExpense: 1500,
+          totalActualExpense: 0,
         });
       })
     );
@@ -103,15 +111,15 @@ describe('BudgetDashboard', () => {
     vi.useRealTimers();
   });
 
-  it('shows summary totals that match rule table monthly normalization', async () => {
+  it('shows summary totals that match rule table monthly totals', async () => {
     render(<BudgetDashboard />);
 
     expect(await screen.findByText('Total Income')).toBeInTheDocument();
-    expect(screen.getByText('$5,773.00')).toBeInTheDocument();
-    expect(screen.getByText('$4,273.00')).toBeInTheDocument();
+    expect(screen.getByText('$5,700.00')).toBeInTheDocument();
+    expect(screen.getByText('$4,200.00')).toBeInTheDocument();
 
     // Total row in income table should match header total.
-    expect(screen.getAllByText('$5,773.00').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('$5,700.00').length).toBeGreaterThan(0);
     expect(screen.getAllByText('/mo').length).toBeGreaterThan(0);
   });
 });
